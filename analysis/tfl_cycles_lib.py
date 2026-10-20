@@ -3,12 +3,24 @@ data."""
 
 from pathlib import Path
 
+import pandas as pd
 import requests
 
 # Large enough to keep the number of writes low, small enough to stay light
 # on memory
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 60
+
+# Journey CSV columns to keep (post-2022 layout), mapped to short names
+JOURNEY_COLUMNS = {
+    "Start date": "start",
+    "Start station number": "start_terminal",
+    "End date": "end",
+    "End station number": "end_terminal",
+    "Bike model": "bike_model",
+    "Total duration (ms)": "duration_ms",
+}
+JOURNEY_DATE_FORMAT = "%Y-%m-%d %H:%M"
 
 
 def download_file(
@@ -57,3 +69,35 @@ def download_file(
 
     partial.rename(dest)
     return dest
+
+
+def load_journeys(paths: list[Path]) -> pd.DataFrame:
+    """Read one or more journey extracts into a single DataFrame.
+
+    Parameters
+    ----------
+    paths : list of Path
+        Journey CSV extracts using the post-2022 column layout.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per journey, with the columns renamed as in
+        ``JOURNEY_COLUMNS``, parsed ``start``/``end`` timestamps and
+        station numbers kept as strings.
+    """
+    frames = [
+        pd.read_csv(
+            path,
+            usecols=list(JOURNEY_COLUMNS),
+            # Keep station numbers as strings so leading zeros survive the
+            # join with the BikePoint TerminalName
+            dtype={"Start station number": str, "End station number": str},
+        )
+        for path in paths
+    ]
+    df = pd.concat(frames, ignore_index=True).rename(columns=JOURNEY_COLUMNS)
+
+    for column in ("start", "end"):
+        df[column] = pd.to_datetime(df[column], format=JOURNEY_DATE_FORMAT)
+    return df
