@@ -26,3 +26,6 @@ dist-ssr
 # Dependency directories and files
 node_modules
 .vite*/
+
+# Raw downloads for the analysis pipeline
+analysis/data/
