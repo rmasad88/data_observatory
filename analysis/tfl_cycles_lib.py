@@ -13,6 +13,8 @@ DOWNLOAD_TIMEOUT_SECONDS = 60
 
 # Journey CSV columns to keep (post-2022 layout), mapped to short names
 JOURNEY_COLUMNS = {
+    "Number": "rental_id",
+    "Bike number": "bike_id",
     "Start date": "start",
     "Start station number": "start_terminal",
     "End date": "end",
@@ -92,11 +94,20 @@ def load_journeys(paths: list[Path]) -> pd.DataFrame:
             usecols=list(JOURNEY_COLUMNS),
             # Keep station numbers as strings so leading zeros survive the
             # join with the BikePoint TerminalName
-            dtype={"Start station number": str, "End station number": str},
+            dtype={
+                "Start station number": str,
+                "End station number": str,
+                # One journey has no bike number; a nullable integer
+                # keeps the rest as whole numbers rather than floats
+                "Bike number": "Int64",
+            },
         )
         for path in paths
     ]
     df = pd.concat(frames, ignore_index=True).rename(columns=JOURNEY_COLUMNS)
+    # usecols keeps the file's column order, so reorder to match
+    # JOURNEY_COLUMNS and give the same layout whatever the source file
+    df = df[list(JOURNEY_COLUMNS.values())]
 
     for column in ("start", "end"):
         df[column] = pd.to_datetime(df[column], format=JOURNEY_DATE_FORMAT)
