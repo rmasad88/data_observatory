@@ -1,6 +1,7 @@
 """Reusable functions for loading, cleaning and aggregating TfL cycle hire
 data."""
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -112,3 +113,34 @@ def load_journeys(paths: list[Path]) -> pd.DataFrame:
     for column in ("start", "end"):
         df[column] = pd.to_datetime(df[column], format=JOURNEY_DATE_FORMAT)
     return df
+
+
+def load_stations(path: Path) -> pd.DataFrame:
+    """Read docking stations from a saved BikePoint API response.
+
+    Parameters
+    ----------
+    path : Path
+        JSON file saved from ``https://api.tfl.gov.uk/BikePoint``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per station with ``terminal``, ``name``, ``lat``, ``lon``
+        and ``docks`` columns.
+    """
+    rows = []
+    for point in json.loads(Path(path).read_text()):
+        # Terminal number and dock count are nested as key/value pairs
+        props = {p["key"]: p["value"] for p in point["additionalProperties"]}
+        rows.append(
+            {
+                # TerminalName matches the journey files' station numbers
+                "terminal": props["TerminalName"],
+                "name": point["commonName"],
+                "lat": point["lat"],
+                "lon": point["lon"],
+                "docks": int(props["NbDocks"]),
+            }
+        )
+    return pd.DataFrame(rows)
