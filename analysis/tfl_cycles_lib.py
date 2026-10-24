@@ -144,3 +144,7 @@ def load_stations(path: Path) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+def test_function():
+    print("This is a test function in tfl_cycles_lib.py")
+
