@@ -4,6 +4,7 @@ import { createFileRoute, useLocation } from '@tanstack/react-router';
 import { Map, type MapRef } from '@vis.gl/react-maplibre';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { WallHeading, WallLegend } from '../components/wall-labels';
 import {
     binPositionAt,
     createStationLayer,
@@ -15,6 +16,7 @@ import { INITIAL_POSITION_MINUTES, playbackMinutes, wrapMinutes } from '../lib/p
 import { screenEngine } from '../lib/realtime/engines/screen-engine';
 import { useScreenStore } from '../lib/realtime/stores/screen-store';
 import { DEFAULT_MAP_VIEW, type ScreenMapViewState } from '../lib/realtime/types';
+import { labelTiles, wallClock } from '../lib/wall-labels';
 import { fitPositionsToWall, type WallSize } from '../lib/wall-view';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -174,6 +176,12 @@ function ScreenPage() {
     const binPosition = heartbeat ? binPositionAt(heartbeat, minutes) : 0;
     const isPlaying = playback?.playing ?? false;
 
+    // Labels shown on this screen, if it is one of the label tiles
+    const tiles = labelTiles(WALL);
+    const showHeading = screenC === tiles.heading.c && screenR === tiles.heading.r;
+    const showLegend = screenC === tiles.legend.c && screenR === tiles.legend.r;
+    const clock = heartbeat ? wallClock(heartbeat.start, minutes) : undefined;
+
     // Only the deck.gl renderer draws these layers, so the fallback skips them
     const layers = useMemo(
         () => (heartbeat && useDeckWrapper ? [createStationLayer(heartbeat, binPosition)] : []),
@@ -281,6 +289,11 @@ function ScreenPage() {
                             style={{ width: '100%', height: '100%' }}
                         />
                     ) : null}
+                </div>
+                {/* Above the map; pointer events are already off for the whole screen */}
+                <div className="absolute inset-0 z-300">
+                    {showHeading ? <WallHeading clock={clock} /> : null}
+                    {showLegend ? <WallLegend /> : null}
                 </div>
             </div>
         </main>
