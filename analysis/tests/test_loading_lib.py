@@ -1,45 +1,23 @@
-"""Tests for tfl_cycles_lib."""
+"""Tests for loading_lib."""
 
 import gzip
 import json
-from pathlib import Path
-
 import pandas as pd
 import pytest
 import requests
 
-from tfl_cycles_lib import (
+from loading_lib import (
+    BIKEPOINT_URL,
     JOURNEY_COLUMNS,
+    SNAPSHOT_2024_PATH,
     SOURCE_CURRENT,
     SOURCE_SNAPSHOT_2024,
-    LONG_HIRE_MAX_MS,
     STATION_COLUMNS,
-    clean_journeys,
     download_file,
-    drop_false_starts,
-    drop_long_hires,
-    drop_unknown_stations,
     get_stations,
     load_journeys,
     load_stations,
-    map_relocated_terminals,
 )
-
-# Archived 2024 station list committed with the repo
-SNAPSHOT_2024 = (
-    Path(__file__).resolve().parents[1]
-    / "reference"
-    / "bikepoint_2024-08-20.json.gz"
-)
-
-# Real data is cached in the same folder the notebook uses, so it is only
-# downloaded once across test runs and notebook sessions
-RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
-JOURNEYS_URL = (
-    "https://cycling.data.tfl.gov.uk/usage-stats/"
-    "399JourneyDataExtract01Jul2024-14Jul2024.csv"
-)
-BIKEPOINT_URL = "https://api.tfl.gov.uk/BikePoint"
 
 # .invalid is a reserved domain, so any real request to it would fail
 UNREACHABLE_URL = "https://example.invalid/cached.csv"
@@ -77,15 +55,9 @@ def bikepoint_station(terminal, docks="20"):
 
 
 @pytest.fixture(scope="session")
-def journeys():
-    """The real July 2024 journeys, downloaded once per test session."""
-    return load_journeys([download_file(JOURNEYS_URL, RAW_DIR)])
-
-
-@pytest.fixture(scope="session")
-def stations():
-    """The real BikePoint stations, downloaded once per test session."""
-    path = download_file(BIKEPOINT_URL, RAW_DIR, filename="bikepoint.json")
+def stations(raw_dir):
+    """Today's BikePoint stations, downloaded once per test session."""
+    path = download_file(BIKEPOINT_URL, raw_dir, filename="bikepoint.json")
     return load_stations(path)
 
 
@@ -247,7 +219,7 @@ def test_load_stations_reads_gzip(tmp_path, bikepoint_json):
 
 
 def test_snapshot_2024_has_2024_stations():
-    snapshot = load_stations(SNAPSHOT_2024).set_index("terminal")
+    snapshot = load_stations(SNAPSHOT_2024_PATH).set_index("terminal")
 
     assert len(snapshot) == 794
     # A station that has since closed
@@ -291,16 +263,12 @@ KNOWN_NAME_TYPOS = {"000964"}
 
 
 @pytest.fixture(scope="session")
-def stations_2024():
-    return get_stations("2024", RAW_DIR)
-
-
-@pytest.fixture(scope="session")
-def journey_station_names():
+def journey_station_names(journeys_path):
     """Each start terminal and the station name the journey file gives."""
-    path = download_file(JOURNEYS_URL, RAW_DIR)
     names = pd.read_csv(
-        path, usecols=["Start station number", "Start station"], dtype=str
+        journeys_path,
+        usecols=["Start station number", "Start station"],
+        dtype=str,
     )
     return names.drop_duplicates().set_axis(["terminal", "name"], axis=1)
 
@@ -312,8 +280,8 @@ def test_get_stations_invalid_source_raises(tmp_path):
     assert not any(tmp_path.iterdir())
 
 
-def test_get_stations_current_is_todays_list(stations):
-    current = get_stations("current", RAW_DIR)
+def test_get_stations_current_is_todays_list(stations, raw_dir):
+    current = get_stations("current", raw_dir)
 
     assert (current["source"] == SOURCE_CURRENT).all()
     pd.testing.assert_frame_equal(current.drop(columns="source"), stations)
@@ -352,118 +320,3 @@ def test_get_stations_2024_names_match_journey_file(
     differs = journey_names != pairs["name_list"].str.strip()
 
     assert set(pairs.loc[differs, "terminal"]) == KNOWN_NAME_TYPOS
-
-
-# Cleaning ---------------------------------------------------------------
-
-
-def make_journeys(rows):
-    """Build journeys from (start_terminal, end_terminal, duration_ms)."""
-    return pd.DataFrame(
-        rows, columns=["start_terminal", "end_terminal", "duration_ms"]
-    )
-
-
-def test_map_relocated_strips_suffix():
-    journeys = make_journeys([("001020444", "003429444", 600_000)])
-    mapped = map_relocated_terminals(journeys)
-
-    assert mapped.loc[0, "start_terminal"] == "001020"
-    assert mapped.loc[0, "end_terminal"] == "003429"
-
-
-def test_map_relocated_keeps_six_digit_terminal_ending_444():
-    # 003444 is a real station, not a relocation
-    journeys = make_journeys([("003444", "001020", 600_000)])
-
-    assert map_relocated_terminals(journeys).loc[0, "start_terminal"] == (
-        "003444"
-    )
-
-
-def test_map_relocated_leaves_input_unchanged():
-    journeys = make_journeys([("001020444", "001020", 600_000)])
-    map_relocated_terminals(journeys)
-
-    assert journeys.loc[0, "start_terminal"] == "001020444"
-
-
-def test_drop_unknown_stations():
-    stations = pd.DataFrame({"terminal": ["001020", "003429"]})
-    journeys = make_journeys(
-        [
-            ("001020", "003429", 600_000),
-            ("022168", "003429", 600_000),
-            ("001020", "010626", 600_000),
-        ]
-    )
-    kept = drop_unknown_stations(journeys, stations)
-
-    assert len(kept) == 1
-    assert list(kept.index) == [0]
-    assert kept.loc[0, "start_terminal"] == "001020"
-
-
-@pytest.mark.parametrize(
-    "start, end, duration_ms, dropped",
-    [
-        ("001020", "001020", 30_000, True),
-        ("001020", "001020", 59_999, True),
-        ("001020", "001020", 60_000, False),
-        ("001020", "001020", 1_200_000, False),
-        # A short hire to a different station is a real (if brief) journey
-        ("001020", "003429", 30_000, False),
-    ],
-)
-def test_drop_false_starts(start, end, duration_ms, dropped):
-    journeys = make_journeys([(start, end, duration_ms)])
-
-    assert drop_false_starts(journeys).empty == dropped
-
-
-@pytest.mark.parametrize(
-    "duration_ms, dropped",
-    [
-        (LONG_HIRE_MAX_MS - 1, False),
-        (LONG_HIRE_MAX_MS, False),
-        (LONG_HIRE_MAX_MS + 1, True),
-        # A lost bike returned weeks later
-        (18 * 24 * 60 * 60 * 1000, True),
-    ],
-)
-def test_drop_long_hires(duration_ms, dropped):
-    journeys = make_journeys([("001020", "003429", duration_ms)])
-
-    assert drop_long_hires(journeys).empty == dropped
-
-
-@pytest.fixture(scope="session")
-def cleaned(journeys, stations_2024):
-    return clean_journeys(journeys, stations_2024)
-
-
-def test_clean_journeys_keeps_relocated_station_journeys(cleaned):
-    terminals = pd.concat([cleaned["start_terminal"], cleaned["end_terminal"]])
-
-    # No old nine-digit terminals remain, and the relocated station
-    # keeps its journeys under its current number
-    assert (terminals.str.len() == 6).all()
-    assert (terminals == "001020").sum() > 1_000
-
-
-def test_clean_journeys_all_stations_known(cleaned, stations_2024):
-    known = stations_2024["terminal"]
-
-    assert cleaned["start_terminal"].isin(known).all()
-    assert cleaned["end_terminal"].isin(known).all()
-
-
-def test_clean_journeys_removes_under_two_percent(journeys, cleaned):
-    # Workshops, false starts and long hires are a small fraction of hires
-    removed = 1 - len(cleaned) / len(journeys)
-
-    assert 0 < removed < 0.02
-
-
-def test_clean_journeys_drops_long_hires(cleaned):
-    assert cleaned["duration_ms"].max() <= LONG_HIRE_MAX_MS
