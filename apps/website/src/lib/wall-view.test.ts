@@ -1,7 +1,7 @@
 import { WebMercatorViewport } from '@deck.gl/core';
 import { describe, expect, it } from 'vite-plus/test';
 
-import { fitPositionsToWall, type WallSize } from './wall-view';
+import { fitPositionsToWall, wallSizeFrom, type WallSize } from './wall-view';
 
 const SIMULATOR_WALL: WallSize = { cols: 3, rows: 2, screenWidth: 1920, screenHeight: 1080 };
 const DO_WALL: WallSize = { cols: 16, rows: 4, screenWidth: 1920, screenHeight: 1080 };
@@ -60,5 +60,30 @@ describe('fitPositionsToWall', () => {
 
     it('rejects an empty list', () => {
         expect(() => fitPositionsToWall([], SIMULATOR_WALL)).toThrow(/empty/);
+    });
+});
+
+describe('wallSizeFrom', () => {
+    const screen = { width: 1920, height: 1080 };
+
+    it('reads the wall size from the URL', () => {
+        expect(wallSizeFrom({ cols: '16', rows: '4' }, screen)).toEqual(DO_WALL);
+        // The router may already have turned them into numbers
+        expect(wallSizeFrom({ cols: 1, rows: 1 }, screen)).toMatchObject({ cols: 1, rows: 1 });
+    });
+
+    it("defaults to the simulator's wall", () => {
+        expect(wallSizeFrom({}, screen)).toEqual(SIMULATOR_WALL);
+    });
+
+    it.each([['0'], ['-2'], ['1.5'], ['wide'], ['65']])('ignores %s screens', (value) => {
+        expect(wallSizeFrom({ cols: value, rows: value }, screen)).toEqual(SIMULATOR_WALL);
+    });
+
+    it("uses the window's size for each screen", () => {
+        expect(wallSizeFrom({}, { width: 1280, height: 720 })).toMatchObject({
+            screenWidth: 1280,
+            screenHeight: 720
+        });
     });
 });

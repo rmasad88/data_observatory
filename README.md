@@ -1,8 +1,23 @@
-# DO App Kit
+# London cycling heartbeat
 
-A starter for creating DO custom applications.
+A Data Observatory app that plays back two weeks of London's Santander Cycles
+journeys (1–14 July 2024) across the wall. Each docking station is a dot sized
+by how busy it is and coloured by whether it is losing bikes (red) or gaining
+them (blue), so the city's morning and evening commuter tides become visible.
 
-This starter repo is built with Vite+.
+Built on the [DO App Kit](https://github.com/dsi-icl/do-starter-playground)
+starter, with Vite+.
+
+## Viewing the wall
+
+Start the development server (`vp run dev`), then open:
+
+- `/`: the simulator, a 3 × 2 wall of screens with operator panels
+- `/control`: the operator panel (play, pause, restart, speed)
+- `/screen?c=0&r=0`: one screen of the wall, by column and row. Add
+  `&cols=16&rows=4` for the Data Observatory's wall; without them the
+  simulator's 3 × 2 is assumed.
+- `/screen?cols=1&rows=1`: the whole picture on one screen
 
 ## Analysis and data
 

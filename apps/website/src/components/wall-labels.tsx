@@ -13,7 +13,7 @@ type HeadingProps = {
 export function WallHeading({ clock }: HeadingProps) {
     return (
         <div className={`${PANEL_CLASS} absolute top-16 left-16 max-w-[1100px]`}>
-            <h2 className="text-7xl font-semibold tracking-tight">{WALL_TITLE}</h2>
+            <h1 className="text-7xl font-semibold tracking-tight">{WALL_TITLE}</h1>
             <p className="mt-4 text-3xl text-zinc-400">{WALL_SUBTITLE}</p>
             {clock ? (
                 <p className="mt-10 flex items-baseline gap-8">

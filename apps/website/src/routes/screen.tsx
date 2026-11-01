@@ -17,20 +17,16 @@ import { screenEngine } from '../lib/realtime/engines/screen-engine';
 import { useScreenStore } from '../lib/realtime/stores/screen-store';
 import { DEFAULT_MAP_VIEW, type ScreenMapViewState } from '../lib/realtime/types';
 import { labelTiles, wallClock } from '../lib/wall-labels';
-import { fitPositionsToWall, type WallSize } from '../lib/wall-view';
+import {
+    DEFAULT_SCREEN_HEIGHT,
+    DEFAULT_SCREEN_WIDTH,
+    fitPositionsToWall,
+    wallSizeFrom,
+    type WallSize
+} from '../lib/wall-view';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-const WALL_COLS = 3;
-const WALL_ROWS = 2;
-const SCREEN_WIDTH = 1920;
-const SCREEN_HEIGHT = 1080;
-const WALL: WallSize = {
-    cols: WALL_COLS,
-    rows: WALL_ROWS,
-    screenWidth: SCREEN_WIDTH,
-    screenHeight: SCREEN_HEIGHT
-};
 // Shared animation timings so transitions feel identical across all screen nodes.
 const MAP_TRANSITION_DURATION_MS = 1200;
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -56,8 +52,18 @@ function ScreenPage() {
     const { search } = useLocation();
     // Query params identify which physical panel this route instance represents.
     const searchParams = (search as Record<string, unknown>) ?? {};
-    const screenC = parseScreenCoordinate(searchParams.c, WALL_COLS, 0);
-    const screenR = parseScreenCoordinate(searchParams.r, WALL_ROWS, 0);
+    // This screen's size, measured once in the browser and on every resize
+    const [screenSize, setScreenSize] = useState({
+        width: DEFAULT_SCREEN_WIDTH,
+        height: DEFAULT_SCREEN_HEIGHT
+    });
+    // The wall's layout comes from the URL (`cols`, `rows`), defaulting to the simulator's
+    const wall = useMemo(
+        () => wallSizeFrom({ cols: searchParams.cols, rows: searchParams.rows }, screenSize),
+        [searchParams.cols, searchParams.rows, screenSize]
+    );
+    const screenC = parseScreenCoordinate(searchParams.c, wall.cols, 0);
+    const screenR = parseScreenCoordinate(searchParams.r, wall.rows, 0);
 
     const mapViewOverride = useScreenStore((state) => state.mapViewOverride);
     const heartbeat = useScreenStore((state) => state.heartbeat);
@@ -71,10 +77,10 @@ function ScreenPage() {
             heartbeat
                 ? fitPositionsToWall(
                       heartbeat.stations.map((station) => station.position),
-                      WALL
+                      wall
                   )
                 : DEFAULT_MAP_VIEW,
-        [heartbeat]
+        [heartbeat, wall]
     );
     const mapView = useMemo(
         () => ({ ...fittedView, ...mapViewOverride }),
@@ -104,6 +110,21 @@ function ScreenPage() {
         setUseDeckWrapper(window.self === window.top);
         // Also the retry path if an earlier heartbeat load failed
         void screenEngine.ensureHeartbeatLoaded();
+    }, []);
+
+    // Track this screen's window size, so the wall's framing fits whatever
+    // display or tab it runs in
+    useEffect(() => {
+        const measure = () => {
+            const { innerWidth: width, innerHeight: height } = window;
+            // Keep the same object when nothing changed, so the framing isn't redone
+            setScreenSize((prev) =>
+                prev.width === width && prev.height === height ? prev : { width, height }
+            );
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
     }, []);
 
     useEffect(() => {
@@ -144,8 +165,8 @@ function ScreenPage() {
 
     const localScreenMapView = useMemo(() => {
         // Transform shared wall center view into per-panel view by offsetting camera in pixels.
-        return deriveScreenMapView(animatedBaseMapView, screenC, screenR);
-    }, [animatedBaseMapView, screenC, screenR]);
+        return deriveScreenMapView(animatedBaseMapView, wall, screenC, screenR);
+    }, [animatedBaseMapView, wall, screenC, screenR]);
 
     // Follow the wall's shared clock. Every screen computes the same moment from
     // the playback state and the server's time, so nothing is sent per frame.
@@ -177,7 +198,7 @@ function ScreenPage() {
     const isPlaying = playback?.playing ?? false;
 
     // Labels shown on this screen, if it is one of the label tiles
-    const tiles = labelTiles(WALL);
+    const tiles = labelTiles(wall);
     const showHeading = screenC === tiles.heading.c && screenR === tiles.heading.r;
     const showLegend = screenC === tiles.legend.c && screenR === tiles.legend.r;
     const clock = heartbeat ? wallClock(heartbeat.start, minutes) : undefined;
@@ -250,18 +271,6 @@ function ScreenPage() {
     return (
         <main className="pointer-events-none h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
             <div className="relative flex h-full w-full items-center justify-center">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(34,197,94,0.14),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(14,165,233,0.12),transparent_45%)]" />
-                <div className="relative z-30 flex h-full w-full flex-col items-center justify-center gap-4">
-                    <p className="text-sm tracking-[0.35em] text-zinc-400 uppercase md:text-lg">
-                        Screen Node
-                    </p>
-                    <h1 className="text-5xl font-semibold tracking-tight md:text-6xl">
-                        /screen?c={screenC}&r={screenR}
-                    </h1>
-                    <div className="text-md rounded-full border border-emerald-400/40 bg-emerald-400/10 px-4 py-1 text-emerald-300 md:text-3xl">
-                        Ready
-                    </div>
-                </div>
                 <div className="absolute inset-0 z-200">
                     {isClient && useDeckWrapper ? (
                         <DeckGL
@@ -332,6 +341,7 @@ function parseScreenCoordinate(value: unknown, size: number, fallback: number) {
 
 function deriveScreenMapView(
     baseView: ScreenMapViewState,
+    wall: WallSize,
     c: number,
     r: number
 ): ScreenMapViewState {
@@ -345,14 +355,14 @@ function deriveScreenMapView(
         zoom: baseView.zoom,
         bearing: baseView.bearing,
         pitch: baseView.pitch,
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT
+        width: wall.screenWidth,
+        height: wall.screenHeight
     });
 
     const [centerX, centerY] = viewport.project([baseView.longitude, baseView.latitude]);
 
-    const pixelOffsetX = (c + 0.5 - WALL_COLS / 2) * SCREEN_WIDTH;
-    const pixelOffsetY = (r + 0.5 - WALL_ROWS / 2) * SCREEN_HEIGHT;
+    const pixelOffsetX = (c + 0.5 - wall.cols / 2) * wall.screenWidth;
+    const pixelOffsetY = (r + 0.5 - wall.rows / 2) * wall.screenHeight;
 
     const [longitude, latitude] = viewport.unproject([
         centerX + pixelOffsetX,

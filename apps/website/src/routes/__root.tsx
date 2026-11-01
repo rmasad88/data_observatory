@@ -21,11 +21,12 @@ export const Route = createRootRouteWithContext()({
                 content: 'width=device-width, initial-scale=1'
             },
             {
-                title: 'DO app'
+                title: 'London cycling heartbeat'
             },
             {
                 name: 'description',
-                content: 'A minimal DO app starter'
+                content:
+                    'Two weeks of London cycle hire journeys, played back across the Data Observatory wall'
             }
         ],
         links: [
