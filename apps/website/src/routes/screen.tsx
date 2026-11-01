@@ -85,6 +85,8 @@ function ScreenPage() {
         // high-level DeckGL canvas is typically safe.
         setUseDeckWrapper(window.self === window.top);
         void screenEngine.ensureArcSegmentsLoaded();
+        // Also the retry path if an earlier heartbeat load failed
+        void screenEngine.ensureHeartbeatLoaded();
     }, []);
 
     useEffect(() => {

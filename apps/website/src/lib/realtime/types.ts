@@ -1,3 +1,5 @@
+import type { HeartbeatData } from '../heartbeat/data';
+
 export type BusMessage = {
     // Keep message kinds namespaced (`control/*`, `screen/*`).
     type: string;
@@ -82,11 +84,18 @@ export type ControlStoreState = EngineStoreState & {
     selectedSegmentIndexes: number[];
 };
 
+// Progress of loading the heartbeat files into the screen store
+export type HeartbeatStatus = 'idle' | 'loading' | 'ready' | 'error';
+
 export type ScreenStoreState = EngineStoreState & {
     mapView: ScreenMapViewState;
     arcSegments: ArcSegment[];
     selectedSegmentIndexes: number[];
     isArcSegmentsLoading: boolean;
+    // Null until loaded; see `ScreenEngine.ensureHeartbeatLoaded`
+    heartbeat: HeartbeatData | null;
+    heartbeatStatus: HeartbeatStatus;
+    heartbeatError: string | null;
 };
 
 export const createInitialControlStoreState = (): ControlStoreState => ({
@@ -108,5 +117,8 @@ export const createInitialScreenStoreState = (): ScreenStoreState => ({
     },
     arcSegments: [],
     selectedSegmentIndexes: [],
-    isArcSegmentsLoading: false
+    isArcSegmentsLoading: false,
+    heartbeat: null,
+    heartbeatStatus: 'idle',
+    heartbeatError: null
 });

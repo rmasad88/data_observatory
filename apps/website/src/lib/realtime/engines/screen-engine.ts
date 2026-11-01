@@ -1,3 +1,4 @@
+import { loadHeartbeat } from '../../heartbeat/data';
 import { loadArcSegmentsDataset } from '../arc-segments';
 import { getCityMapView, isMapCity } from '../map-cities';
 import { screenStore } from '../stores/screen-store';
@@ -15,11 +16,15 @@ import { BusEngine } from './bus-engine';
 export class ScreenEngine extends BusEngine<ScreenStoreState> {
     // Guards repeated fetches during retries/rerenders.
     private hasAttemptedArcSegmentLoad = false;
+    // The heartbeat download in progress, shared by every caller so the
+    // ~6 MB counts file is only fetched once. Cleared when it finishes.
+    private heartbeatRequest: Promise<void> | null = null;
 
     private constructor() {
         super('screen', screenStore);
         // Prime dataset early so first render after route mount has data asap.
         void this.ensureArcSegmentsLoaded();
+        void this.ensureHeartbeatLoaded();
     }
 
     static getInstance() {
@@ -43,6 +48,44 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
                 ...view
             }
         }));
+    }
+
+    // Load the heartbeat into the store unless it is already there. Callers
+    // during a download wait for that same download; after a failure the
+    // next call tries again.
+    ensureHeartbeatLoaded(): Promise<void> {
+        // Nothing to load during server rendering
+        if (typeof window === 'undefined') return Promise.resolve();
+        if (this.store.state.heartbeat) return Promise.resolve();
+
+        this.heartbeatRequest ??= this.loadHeartbeatIntoStore().finally(() => {
+            this.heartbeatRequest = null;
+        });
+        return this.heartbeatRequest;
+    }
+
+    private async loadHeartbeatIntoStore() {
+        this.store.setState((prev) => ({
+            ...prev,
+            heartbeatStatus: 'loading',
+            heartbeatError: null
+        }));
+
+        try {
+            const heartbeat = await loadHeartbeat();
+            this.store.setState((prev) => ({
+                ...prev,
+                heartbeat,
+                heartbeatStatus: 'ready'
+            }));
+        } catch (error) {
+            // Keep the message so the screen can show what went wrong
+            this.store.setState((prev) => ({
+                ...prev,
+                heartbeatStatus: 'error',
+                heartbeatError: error instanceof Error ? error.message : String(error)
+            }));
+        }
     }
 
     async ensureArcSegmentsLoaded() {
