@@ -16,13 +16,17 @@ export type HeartbeatStation = {
     source: string;
 };
 
-export type HeartbeatData = {
+// The period the data covers, from the metadata alone
+export type HeartbeatPeriod = {
     // Start of the first bin in London local time, e.g. "2024-07-01T00:00:00".
     // Kept as text and only used for labels: playback works in minutes since
     // the start, so the viewer's timezone never matters.
     start: string;
     binMinutes: number;
     binCount: number;
+};
+
+export type HeartbeatData = HeartbeatPeriod & {
     stations: HeartbeatStation[];
     // Counts per station per bin, flattened with one station's bins together.
     // Use `countIndex` to find a value.
@@ -35,16 +39,25 @@ export function countIndex(data: HeartbeatData, station: number, bin: number) {
     return station * data.binCount + bin;
 }
 
-// Validate the metadata and wrap the count bytes. Throws with a specific
-// message if anything doesn't match, so a stale or corrupt export fails loudly.
-export function parseHeartbeat(metadata: unknown, counts: ArrayBuffer): HeartbeatData {
+// Read just the period from the metadata, e.g. for the control panel, which
+// needs the dates but not the counts.
+export function parseHeartbeatPeriod(metadata: unknown): HeartbeatPeriod {
     if (!isRecord(metadata)) throw new Error('Heartbeat metadata is not an object');
-    const { start, binMinutes, binCount, stationCount, stations } = metadata;
-    const layout = metadata.counts;
-
+    const { start, binMinutes, binCount } = metadata;
     if (typeof start !== 'string') throw new Error('Heartbeat start is missing');
     if (!isPositiveInteger(binMinutes)) throw new Error('Invalid binMinutes');
     if (!isPositiveInteger(binCount)) throw new Error('Invalid binCount');
+    return { start, binMinutes, binCount };
+}
+
+// Validate the metadata and wrap the count bytes. Throws with a specific
+// message if anything doesn't match, so a stale or corrupt export fails loudly.
+export function parseHeartbeat(metadata: unknown, counts: ArrayBuffer): HeartbeatData {
+    const { start, binMinutes, binCount } = parseHeartbeatPeriod(metadata);
+    // parseHeartbeatPeriod has confirmed metadata is an object
+    const { stationCount, stations } = metadata as Record<string, unknown>;
+    const layout = (metadata as Record<string, unknown>).counts;
+
     if (!isPositiveInteger(stationCount)) throw new Error('Invalid stationCount');
 
     if (
@@ -84,6 +97,15 @@ export function parseHeartbeat(metadata: unknown, counts: ArrayBuffer): Heartbea
             valuesPerBlock
         )
     };
+}
+
+// Fetch only the metadata file and read its period
+export async function loadHeartbeatPeriod(baseUrl = HEARTBEAT_DIR): Promise<HeartbeatPeriod> {
+    const response = await fetch(`${baseUrl}/${METADATA_FILE}`);
+    if (!response.ok) {
+        throw new Error(`Failed to load heartbeat metadata: ${response.status}`);
+    }
+    return parseHeartbeatPeriod(await response.json());
 }
 
 // Fetch both files and parse them. Throws on network or format errors; the

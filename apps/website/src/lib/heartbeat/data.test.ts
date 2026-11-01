@@ -1,9 +1,19 @@
+// Runs in Node and reads the committed files from disk. This tells type
+// checkers given just this file (e.g. the pre-commit hook) to load Node's types.
+/// <reference types="node" />
+
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { countIndex, loadHeartbeat, parseHeartbeat } from './data';
+import {
+    countIndex,
+    loadHeartbeat,
+    loadHeartbeatPeriod,
+    parseHeartbeat,
+    parseHeartbeatPeriod
+} from './data';
 
 // Two stations over three bins, with distinct values so misplaced reads show up
 const DEPARTURES = [1, 2, 3, 4, 5, 6];
@@ -93,6 +103,20 @@ describe('parseHeartbeat', () => {
     });
 });
 
+describe('parseHeartbeatPeriod', () => {
+    it('reads the period alone', () => {
+        expect(parseHeartbeatPeriod(makeMetadata())).toEqual({
+            start: '2024-07-01T00:00:00',
+            binMinutes: 10,
+            binCount: 3
+        });
+    });
+
+    it('rejects an invalid period', () => {
+        expect(() => parseHeartbeatPeriod(makeMetadata({ binMinutes: -10 }))).toThrow();
+    });
+});
+
 describe('loadHeartbeat', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -125,6 +149,24 @@ describe('loadHeartbeat', () => {
         );
 
         await expect(loadHeartbeat('/base')).rejects.toThrow(/404/);
+    });
+});
+
+describe('loadHeartbeatPeriod', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('fetches only the metadata file', async () => {
+        const fetchMock = vi.fn(
+            async (_url: string) => new Response(JSON.stringify(makeMetadata()))
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const period = await loadHeartbeatPeriod('/base');
+
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/base/stations.json']);
+        expect(period.binCount).toBe(3);
     });
 });
 

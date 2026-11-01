@@ -101,6 +101,47 @@ export function parsePlaybackState(value: unknown): PlaybackState | null {
     };
 }
 
+// Accept a playback state sent by the bus, with the server's time when it was
+// sent. Returns the state and the offset to add to this machine's clock to get
+// the server's, or null if anything is invalid. Message delivery takes a few
+// milliseconds, far too little to see at playback speed.
+export function parsePlaybackUpdate(
+    state: unknown,
+    serverNow: unknown,
+    localNow: number
+): { playback: PlaybackState; clockOffsetMs: number } | null {
+    const playback = parsePlaybackState(state);
+    if (!playback || !isFiniteNumber(serverNow)) return null;
+    return { playback, clockOffsetMs: serverNow - localNow };
+}
+
+const LOCAL_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/;
+
+// Label for a playback position, e.g. "Wed 10 Jul 08:52". `start` is the data's
+// start in London local time ("2024-07-01T00:00:00"). The arithmetic is done in
+// UTC purely as a calendar, so the viewer's timezone can never shift the label.
+export function formatDataTime(start: string, minutes: number) {
+    const match = LOCAL_DATE_TIME.exec(start);
+    if (!match) throw new Error(`Unrecognised start time: ${start}`);
+    const [, year, month, day, hour, minute] = match.map(Number);
+    const startMs = Date.UTC(year, month - 1, day, hour, minute);
+    const moment = new Date(startMs + Math.floor(minutes) * 60_000);
+
+    const date = moment.toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC'
+    });
+    const time = moment.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'UTC'
+    });
+    return `${date} ${time}`.replace(',', '');
+}
+
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }

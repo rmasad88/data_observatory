@@ -1,5 +1,5 @@
 import { loadHeartbeat } from '../../heartbeat/data';
-import { parsePlaybackState } from '../../playback';
+import { parsePlaybackUpdate } from '../../playback';
 import { screenStore } from '../stores/screen-store';
 import type {
     BusMessage,
@@ -105,16 +105,10 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
     }
 
     // Store the wall's playback state and line this screen's clock up with the
-    // server's. Message delivery takes a few milliseconds, which is far too
-    // little to see at playback speed.
+    // server's (see `parsePlaybackUpdate`)
     private applyPlayback(state: unknown, serverNow: unknown) {
-        const playback = parsePlaybackState(state);
-        if (!playback || typeof serverNow !== 'number' || !Number.isFinite(serverNow)) return;
-        this.store.setState((prev) => ({
-            ...prev,
-            playback,
-            clockOffsetMs: serverNow - Date.now()
-        }));
+        const update = parsePlaybackUpdate(state, serverNow, Date.now());
+        if (update) this.store.setState((prev) => ({ ...prev, ...update }));
     }
 }
 

@@ -6,8 +6,10 @@ import {
     MAX_SPEED,
     applyPlaybackCommand,
     createInitialPlayback,
+    formatDataTime,
     parsePlaybackCommand,
     parsePlaybackState,
+    parsePlaybackUpdate,
     playbackMinutes,
     wrapMinutes,
     type PlaybackState
@@ -119,5 +121,38 @@ describe('parsePlaybackState', () => {
         expect(parsePlaybackState({ ...playingFromMidnight, startedAt: 'now' })).toBeNull();
         expect(parsePlaybackState({ playing: true, speed: 24, startedAt: 0 })).toBeNull();
         expect(parsePlaybackState(null)).toBeNull();
+    });
+});
+
+describe('parsePlaybackUpdate', () => {
+    it('returns the state and the offset from this clock to the server', () => {
+        expect(parsePlaybackUpdate(playingFromMidnight, 5_000, 3_000)).toEqual({
+            playback: playingFromMidnight,
+            clockOffsetMs: 2_000
+        });
+    });
+
+    it('rejects an invalid state or server time', () => {
+        expect(parsePlaybackUpdate({ playing: true }, 5_000, 3_000)).toBeNull();
+        expect(parsePlaybackUpdate(playingFromMidnight, 'later', 3_000)).toBeNull();
+    });
+});
+
+describe('formatDataTime', () => {
+    const START = '2024-07-01T00:00:00';
+
+    it.each([
+        [0, 'Mon 1 Jul 00:00'],
+        [INITIAL_POSITION_MINUTES, 'Wed 10 Jul 08:30'],
+        // Partial minutes are dropped rather than rounded up
+        [59.9, 'Mon 1 Jul 00:59'],
+        // The last minute of the fortnight
+        [FORTNIGHT_MINUTES - 1, 'Sun 14 Jul 23:59']
+    ])('labels %d minutes as %s', (minutes, expected) => {
+        expect(formatDataTime(START, minutes)).toBe(expected);
+    });
+
+    it('rejects a start it cannot read', () => {
+        expect(() => formatDataTime('1 July', 0)).toThrow(/start/);
     });
 });

@@ -1,4 +1,4 @@
-import type { HeartbeatData } from '../heartbeat/data';
+import type { HeartbeatData, HeartbeatPeriod } from '../heartbeat/data';
 import type { PlaybackCommand, PlaybackState } from '../playback';
 
 export type BusMessage = {
@@ -88,8 +88,14 @@ export const createInitialEngineStoreState = (role: EngineRole): EngineStoreStat
     lastError: null
 });
 
-// Playback controls will add their state here
-export type ControlStoreState = EngineStoreState;
+export type ControlStoreState = EngineStoreState & {
+    // Null until the bus sends it (in `hello` or a `playback/state` message)
+    playback: PlaybackState | null;
+    // Add to this device's Date.now() to get the bus server's time
+    clockOffsetMs: number;
+    // Dates the data covers, for labels and looping; null until loaded
+    period: HeartbeatPeriod | null;
+};
 
 // Progress of loading the heartbeat files into the screen store
 export type HeartbeatStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -106,8 +112,12 @@ export type ScreenStoreState = EngineStoreState & {
     clockOffsetMs: number;
 };
 
-export const createInitialControlStoreState = (): ControlStoreState =>
-    createInitialEngineStoreState('control');
+export const createInitialControlStoreState = (): ControlStoreState => ({
+    ...createInitialEngineStoreState('control'),
+    playback: null,
+    clockOffsetMs: 0,
+    period: null
+});
 
 export const createInitialScreenStoreState = (): ScreenStoreState => ({
     ...createInitialEngineStoreState('screen'),
