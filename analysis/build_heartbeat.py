@@ -16,7 +16,12 @@ import pandas as pd
 
 from cleaning_lib import clean_journeys
 from heartbeat_lib import build_heartbeat, export_heartbeat
-from loading_lib import download_file, get_stations, load_journeys
+from loading_lib import (
+    JOURNEYS_JULY_2024_URL,
+    download_file,
+    get_stations,
+    load_journeys,
+)
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
 RAW_DIR = ANALYSIS_DIR / "data" / "raw"
@@ -24,10 +29,7 @@ OUTPUT_DIR = (
     ANALYSIS_DIR.parent / "apps" / "website" / "public" / "data" / "heartbeat"
 )
 
-JOURNEY_URLS = [
-    "https://cycling.data.tfl.gov.uk/usage-stats/"
-    "399JourneyDataExtract01Jul2024-14Jul2024.csv",
-]
+JOURNEY_URLS = [JOURNEYS_JULY_2024_URL]
 # The period shown, including the start and excluding the end
 PERIOD_START = pd.Timestamp("2024-07-01")
 PERIOD_END = pd.Timestamp("2024-07-15")

@@ -9,15 +9,16 @@ from pathlib import Path
 import pytest
 
 from cleaning_lib import clean_journeys
-from loading_lib import download_file, get_stations, load_journeys
+from loading_lib import (
+    JOURNEYS_JULY_2024_URL,
+    download_file,
+    get_stations,
+    load_journeys,
+)
 
 # Real data is cached in the same folder the notebook uses, so it is only
 # downloaded once across test runs and notebook sessions
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
-JOURNEYS_URL = (
-    "https://cycling.data.tfl.gov.uk/usage-stats/"
-    "399JourneyDataExtract01Jul2024-14Jul2024.csv"
-)
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +30,7 @@ def raw_dir():
 @pytest.fixture(scope="session")
 def journeys_path():
     """The real July 2024 journeys CSV, downloaded once."""
-    return download_file(JOURNEYS_URL, RAW_DIR)
+    return download_file(JOURNEYS_JULY_2024_URL, RAW_DIR)
 
 
 @pytest.fixture(scope="session")

@@ -25,6 +25,12 @@ JOURNEY_COLUMNS = {
 }
 JOURNEY_DATE_FORMAT = "%Y-%m-%d %H:%M"
 
+# Journey extract analysed throughout: 1-14 July 2024
+JOURNEYS_JULY_2024_URL = (
+    "https://cycling.data.tfl.gov.uk/usage-stats/"
+    "399JourneyDataExtract01Jul2024-14Jul2024.csv"
+)
+
 # Live list of docking stations, describing the network today
 BIKEPOINT_URL = "https://api.tfl.gov.uk/BikePoint"
 
