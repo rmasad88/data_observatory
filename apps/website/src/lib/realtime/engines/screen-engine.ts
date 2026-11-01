@@ -3,8 +3,8 @@ import { screenStore } from '../stores/screen-store';
 import type {
     BusMessage,
     HelloBusMessage,
+    MapViewOverride,
     ScreenMapViewMessage,
-    ScreenMapViewState,
     ScreenStoreState
 } from '../types';
 import { BusEngine } from './bus-engine';
@@ -32,12 +32,12 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
         return globalWithScreenEngine.__screenEngineInstance;
     }
 
-    setMapView(view: Partial<ScreenMapViewState>) {
-        // Merge patch updates so callers can provide only changed camera fields.
+    // Merge operator camera changes into the overrides, keeping fields not mentioned.
+    setMapViewOverride(view: MapViewOverride) {
         this.store.setState((prev) => ({
             ...prev,
-            mapView: {
-                ...prev.mapView,
+            mapViewOverride: {
+                ...prev.mapViewOverride,
                 ...view
             }
         }));
@@ -83,32 +83,31 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
 
     protected override onMessage(message: BusMessage) {
         if (message.type === 'screen/map-view') {
-            this.applyMapView((message as ScreenMapViewMessage).view);
+            this.setMapViewOverride(validMapViewFields((message as ScreenMapViewMessage).view));
         }
     }
 
     protected override onHello(hello: HelloBusMessage) {
-        // Late joiners take the wall's current camera from the bus snapshot, via the
-        // same path as live updates so both behave identically.
-        if (hello.state) this.applyMapView(hello.state.mapView);
+        if (!hello.state) return;
+        // The bus snapshot is the wall's current camera, so it replaces any local
+        // overrides rather than adding to them.
+        const mapViewOverride = validMapViewFields(hello.state.mapViewOverride);
+        this.store.setState((prev) => ({ ...prev, mapViewOverride }));
     }
+}
 
-    private applyMapView(view: unknown) {
-        // Network payloads are untrusted: only take fields that are numbers.
-        if (typeof view !== 'object' || view === null) return;
-        const candidate = view as Partial<Record<keyof ScreenMapViewState, unknown>>;
-        const current = this.store.state.mapView;
-        const pick = (key: keyof ScreenMapViewState) =>
-            typeof candidate[key] === 'number' ? candidate[key] : current[key];
+const MAP_VIEW_FIELDS = ['longitude', 'latitude', 'zoom', 'bearing', 'pitch'] as const;
 
-        this.setMapView({
-            longitude: pick('longitude'),
-            latitude: pick('latitude'),
-            zoom: pick('zoom'),
-            bearing: pick('bearing'),
-            pitch: pick('pitch')
-        });
+// Network payloads are untrusted: keep only camera fields that are finite numbers.
+function validMapViewFields(view: unknown): MapViewOverride {
+    if (typeof view !== 'object' || view === null) return {};
+    const candidate = view as Record<string, unknown>;
+    const valid: MapViewOverride = {};
+    for (const key of MAP_VIEW_FIELDS) {
+        const value = candidate[key];
+        if (typeof value === 'number' && Number.isFinite(value)) valid[key] = value;
     }
+    return valid;
 }
 
 export const screenEngine = ScreenEngine.getInstance();

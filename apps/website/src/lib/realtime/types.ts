@@ -22,7 +22,8 @@ export type ScreenMapViewState = {
     pitch: number;
 };
 
-// Central London, where the docking stations are; screens start here
+// Central London. Screens show this until the stations load, then fit the
+// camera to them (see `fitPositionsToWall`).
 export const DEFAULT_MAP_VIEW: ScreenMapViewState = {
     longitude: -0.1749,
     latitude: 51.4988,
@@ -31,9 +32,13 @@ export const DEFAULT_MAP_VIEW: ScreenMapViewState = {
     pitch: 0
 };
 
+// Camera fields an operator has changed, laid over each screen's fitted view.
+// Empty means "show the fitted view".
+export type MapViewOverride = Partial<ScreenMapViewState>;
+
 // Collaborative state the bus replays to late joiners in its `hello` message
 export type BusSharedState = {
-    mapView: ScreenMapViewState;
+    mapViewOverride: MapViewOverride;
 };
 
 export type ScreenMapViewMessage = BusMessage & {
@@ -72,7 +77,7 @@ export type ControlStoreState = EngineStoreState;
 export type HeartbeatStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export type ScreenStoreState = EngineStoreState & {
-    mapView: ScreenMapViewState;
+    mapViewOverride: MapViewOverride;
     // Null until loaded; see `ScreenEngine.ensureHeartbeatLoaded`
     heartbeat: HeartbeatData | null;
     heartbeatStatus: HeartbeatStatus;
@@ -84,7 +89,7 @@ export const createInitialControlStoreState = (): ControlStoreState =>
 
 export const createInitialScreenStoreState = (): ScreenStoreState => ({
     ...createInitialEngineStoreState('screen'),
-    mapView: DEFAULT_MAP_VIEW,
+    mapViewOverride: {},
     heartbeat: null,
     heartbeatStatus: 'idle',
     heartbeatError: null

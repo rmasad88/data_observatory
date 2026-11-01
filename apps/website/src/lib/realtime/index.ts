@@ -11,5 +11,6 @@ export type {
     EngineRole,
     EngineStoreState,
     HelloBusMessage,
+    MapViewOverride,
     ScreenMapViewMessage
 } from './types';

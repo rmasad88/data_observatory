@@ -2,13 +2,13 @@ import { createFileRoute } from '@tanstack/react-router';
 import { defineHooks } from 'crossws';
 
 import type { BusMessage, BusSharedState, ScreenMapViewMessage } from '../lib/realtime';
-import { DEFAULT_MAP_VIEW } from '../lib/realtime/types';
 
 // In-memory bus state for this server process.
 // New clients receive this snapshot in the `hello` handshake so they can
 // join late without waiting for another control interaction.
 const busSharedState: BusSharedState = {
-    mapView: { ...DEFAULT_MAP_VIEW }
+    // Nothing overridden until an operator moves the camera
+    mapViewOverride: {}
 };
 
 const hooks = defineHooks({
@@ -66,11 +66,11 @@ function updateBusSharedState(payload: Partial<BusMessage>) {
     if (typeof view !== 'object' || view === null) return;
 
     // Keep the last valid value of each camera field for hello-state replay.
-    const mapView = busSharedState.mapView;
+    const mapViewOverride = busSharedState.mapViewOverride;
     for (const key of ['longitude', 'latitude', 'zoom', 'bearing', 'pitch'] as const) {
         const value = view[key];
         if (typeof value === 'number' && Number.isFinite(value)) {
-            mapView[key] = value;
+            mapViewOverride[key] = value;
         }
     }
 }

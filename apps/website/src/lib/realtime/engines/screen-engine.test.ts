@@ -90,3 +90,40 @@ describe('ensureHeartbeatLoaded', () => {
         expect(screenStore.state.heartbeatStatus).toBe('idle');
     });
 });
+
+describe('camera overrides', () => {
+    // onMessage and onHello are called by the bus connection; tests call them directly
+    type BusHandlers = {
+        onMessage(message: unknown): void;
+        onHello(hello: unknown): void;
+    };
+
+    it('adds valid fields from map-view messages, keeping earlier ones', async () => {
+        loadHeartbeat.mockResolvedValue(FAKE_HEARTBEAT);
+        const { screenEngine, screenStore } = await freshScreenEngine();
+        const handlers = screenEngine as unknown as BusHandlers;
+
+        handlers.onMessage({ type: 'screen/map-view', view: { zoom: 14 } });
+        handlers.onMessage({
+            type: 'screen/map-view',
+            view: { bearing: 30, pitch: 'steep', latitude: Number.NaN }
+        });
+
+        expect(screenStore.state.mapViewOverride).toEqual({ zoom: 14, bearing: 30 });
+    });
+
+    it('replaces the overrides with the bus snapshot on hello', async () => {
+        loadHeartbeat.mockResolvedValue(FAKE_HEARTBEAT);
+        const { screenEngine, screenStore } = await freshScreenEngine();
+        const handlers = screenEngine as unknown as BusHandlers;
+
+        handlers.onMessage({ type: 'screen/map-view', view: { zoom: 14 } });
+        handlers.onHello({
+            type: 'hello',
+            peerId: 'p1',
+            state: { mapViewOverride: { pitch: 20 } }
+        });
+
+        expect(screenStore.state.mapViewOverride).toEqual({ pitch: 20 });
+    });
+});

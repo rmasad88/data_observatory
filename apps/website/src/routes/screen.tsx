@@ -1,12 +1,15 @@
 import { WebMercatorViewport } from '@deck.gl/core';
 import DeckGL from '@deck.gl/react';
 import { createFileRoute, useLocation } from '@tanstack/react-router';
-import { Map } from '@vis.gl/react-maplibre';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Map, type MapRef } from '@vis.gl/react-maplibre';
+import type { GeoJSONSource } from 'maplibre-gl';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { createStationLayer, stationCirclePaint, stationFeatures } from '../lib/heartbeat/layer';
 import { screenEngine } from '../lib/realtime/engines/screen-engine';
 import { useScreenStore } from '../lib/realtime/stores/screen-store';
-import type { ScreenMapViewState } from '../lib/realtime/types';
+import { DEFAULT_MAP_VIEW, type ScreenMapViewState } from '../lib/realtime/types';
+import { fitPositionsToWall, type WallSize } from '../lib/wall-view';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -14,9 +17,22 @@ const WALL_COLS = 3;
 const WALL_ROWS = 2;
 const SCREEN_WIDTH = 1920;
 const SCREEN_HEIGHT = 1080;
+const WALL: WallSize = {
+    cols: WALL_COLS,
+    rows: WALL_ROWS,
+    screenWidth: SCREEN_WIDTH,
+    screenHeight: SCREEN_HEIGHT
+};
 // Shared animation timings so transitions feel identical across all screen nodes.
 const MAP_TRANSITION_DURATION_MS = 1200;
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+// Fixed moment shown until playback exists: Wednesday 10 July 08:30, the
+// morning peak, in minutes since the data's start (Monday 1 July 00:00).
+// To be replaced by the shared clock.
+const PREVIEW_MINUTES = (9 * 24 + 8.5) * 60;
+// Fallback renderer's MapLibre source and layer for the stations
+const STATIONS_SOURCE_ID = 'stations-source';
+const STATIONS_LAYER_ID = 'stations-layer';
 
 // Each `/screen` instance represents one wall tile (`c`,`r`) and computes
 // a local camera from shared wall state. We keep a lighter fallback renderer for
@@ -33,11 +49,34 @@ function ScreenPage() {
     const screenC = parseScreenCoordinate(searchParams.c, WALL_COLS, 0);
     const screenR = parseScreenCoordinate(searchParams.r, WALL_ROWS, 0);
 
-    const mapView = useScreenStore((state) => state.mapView);
+    const mapViewOverride = useScreenStore((state) => state.mapViewOverride);
+    const heartbeat = useScreenStore((state) => state.heartbeat);
+
+    // Frame all stations on the whole wall, then apply any operator changes.
+    // Until the data loads, show the default view of London.
+    const fittedView = useMemo(
+        () =>
+            heartbeat
+                ? fitPositionsToWall(
+                      heartbeat.stations.map((station) => station.position),
+                      WALL
+                  )
+                : DEFAULT_MAP_VIEW,
+        [heartbeat]
+    );
+    const mapView = useMemo(
+        () => ({ ...fittedView, ...mapViewOverride }),
+        [fittedView, mapViewOverride]
+    );
     const [isClient, setIsClient] = useState(false);
     const [useDeckWrapper, setUseDeckWrapper] = useState(false);
     const [animatedBaseMapView, setAnimatedBaseMapView] = useState(mapView);
     const animationFrameRef = useRef<number | null>(null);
+    const [mapInstance, setMapInstance] = useState<ReturnType<MapRef['getMap']> | null>(null);
+
+    const setMapRef = useCallback((instance: MapRef | null) => {
+        setMapInstance(instance?.getMap() ?? null);
+    }, []);
 
     useEffect(() => {
         setIsClient(true);
@@ -90,6 +129,44 @@ function ScreenPage() {
         return deriveScreenMapView(animatedBaseMapView, screenC, screenR);
     }, [animatedBaseMapView, screenC, screenR]);
 
+    // The bin shown, shared by both renderers
+    const bin = heartbeat ? Math.floor(PREVIEW_MINUTES / heartbeat.binMinutes) : 0;
+
+    const layers = useMemo(
+        () => (heartbeat ? [createStationLayer(heartbeat, bin)] : []),
+        [heartbeat, bin]
+    );
+
+    useEffect(() => {
+        if (!isClient || useDeckWrapper || !mapInstance || !heartbeat) return;
+        const features = stationFeatures(heartbeat, bin);
+
+        // Create the source and layer once, then update the data in place
+        // rather than rebuilding layers (see BEST_PRACTICES on wall performance).
+        const syncStations = () => {
+            if (!mapInstance.isStyleLoaded()) return;
+            const source = mapInstance.getSource<GeoJSONSource>(STATIONS_SOURCE_ID);
+            if (source) {
+                source.setData(features);
+                return;
+            }
+            mapInstance.addSource(STATIONS_SOURCE_ID, { type: 'geojson', data: features });
+            mapInstance.addLayer({
+                id: STATIONS_LAYER_ID,
+                type: 'circle',
+                source: STATIONS_SOURCE_ID,
+                paint: stationCirclePaint()
+            });
+        };
+
+        syncStations();
+        // If the map style was still loading, add the stations once it is ready
+        mapInstance.on('load', syncStations);
+        return () => {
+            mapInstance.off('load', syncStations);
+        };
+    }, [isClient, useDeckWrapper, mapInstance, heartbeat, bin]);
+
     return (
         <main className="pointer-events-none h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
             <div className="relative flex h-full w-full items-center justify-center">
@@ -110,7 +187,7 @@ function ScreenPage() {
                         <DeckGL
                             controller={false}
                             viewState={localScreenMapView}
-                            layers={[]}
+                            layers={layers}
                             style={{ width: '100%', height: '100%' }}
                         >
                             <Map reuseMaps attributionControl={false} mapStyle={MAP_STYLE} />
@@ -118,8 +195,9 @@ function ScreenPage() {
                     ) : null}
 
                     {isClient && !useDeckWrapper ? (
-                        // Iframe-safe fallback implementation: direct map rendering.
+                        // Iframe-safe fallback implementation: direct map rendering + imperative layers.
                         <Map
+                            ref={setMapRef}
                             reuseMaps
                             attributionControl={false}
                             mapStyle={MAP_STYLE}
