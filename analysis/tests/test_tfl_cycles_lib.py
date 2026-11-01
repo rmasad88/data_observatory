@@ -1,5 +1,6 @@
 """Tests for tfl_cycles_lib."""
 
+import gzip
 import json
 from pathlib import Path
 
@@ -13,6 +14,13 @@ from tfl_cycles_lib import (
     download_file,
     load_journeys,
     load_stations,
+)
+
+# Archived 2024 station list committed with the repo
+SNAPSHOT_2024 = (
+    Path(__file__).resolve().parents[1]
+    / "reference"
+    / "bikepoint_2024-08-20.json.gz"
 )
 
 # Real data is cached in the same folder the notebook uses, so it is only
@@ -217,6 +225,26 @@ def test_load_stations_empty_keeps_columns(bikepoint_json):
 
     assert empty.empty
     assert list(empty.columns) == STATION_COLUMNS
+
+
+def test_load_stations_reads_gzip(tmp_path, bikepoint_json):
+    plain = bikepoint_json([bikepoint_station("001023")])
+    compressed = tmp_path / "bikepoint.json.gz"
+    compressed.write_bytes(gzip.compress(plain.read_bytes()))
+
+    pd.testing.assert_frame_equal(
+        load_stations(compressed), load_stations(plain)
+    )
+
+
+def test_snapshot_2024_has_2024_stations():
+    snapshot = load_stations(SNAPSHOT_2024).set_index("terminal")
+
+    assert len(snapshot) == 794
+    # A station that has since closed
+    assert snapshot.loc["022163", "name"].startswith("Southwark Station 2")
+    # A terminal number TfL later reused for a station 12 km away
+    assert snapshot.loc["001058", "name"].startswith("Edgware Road Station")
 
 
 # load_stations: real data -----------------------------------------------

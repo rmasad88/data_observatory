@@ -1,6 +1,7 @@
 """Reusable functions for loading, cleaning and aggregating TfL cycle hire
 data."""
 
+import gzip
 import json
 from pathlib import Path
 
@@ -134,7 +135,8 @@ def load_stations(path: Path) -> pd.DataFrame:
     Parameters
     ----------
     path : Path
-        JSON file saved from ``https://api.tfl.gov.uk/BikePoint``.
+        JSON file saved from ``https://api.tfl.gov.uk/BikePoint``. Files
+        ending in ``.gz`` are read as gzip-compressed JSON.
 
     Returns
     -------
@@ -148,8 +150,15 @@ def load_stations(path: Path) -> pd.DataFrame:
     KeyError
         If a station is missing its ``TerminalName`` or ``NbDocks``.
     """
+    path = Path(path)
+    # Archived snapshots are stored gzip-compressed, as the archive
+    # served them
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as f:
+        points = json.load(f)
+
     rows = []
-    for point in json.loads(Path(path).read_text()):
+    for point in points:
         # Terminal number and dock count are nested as key/value pairs
         props = {p["key"]: p["value"] for p in point["additionalProperties"]}
         rows.append(
