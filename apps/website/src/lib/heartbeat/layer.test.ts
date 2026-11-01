@@ -8,7 +8,7 @@ import {
     RADIUS_BASE_METERS,
     RADIUS_MIN_PIXELS,
     RADIUS_PER_SQRT_JOURNEY_METERS,
-    activityAt,
+    activitiesAtPosition,
     activityAtPosition,
     binPositionAt,
     createStationLayer,
@@ -46,26 +46,6 @@ function makeData(): HeartbeatData {
         arrivals: new Uint16Array([0, 0, 0, 0, 0, 2, 2, 2, 2, 2])
     };
 }
-
-describe('activityAt', () => {
-    it('averages a bin with its neighbours', () => {
-        // Default 50-minute window: (0 + 3 + 6 + 9 + 12) / 5
-        expect(activityAt(makeData(), 0, 2)).toEqual({ departures: 6, arrivals: 0 });
-        // 30-minute window: (3 + 6 + 9) / 3
-        expect(activityAt(makeData(), 0, 2, 1)).toEqual({ departures: 6, arrivals: 0 });
-    });
-
-    it('averages only the bins that exist at the edges', () => {
-        // With a 30-minute window. First bin: (0 + 3) / 2; last: (9 + 12) / 2
-        expect(activityAt(makeData(), 0, 0, 1).departures).toBe(1.5);
-        expect(activityAt(makeData(), 0, 4, 1).departures).toBe(10.5);
-    });
-
-    it('returns the raw counts without smoothing', () => {
-        expect(activityAt(makeData(), 0, 3, 0)).toEqual({ departures: 9, arrivals: 0 });
-        expect(activityAt(makeData(), 1, 3, 0)).toEqual({ departures: 0, arrivals: 2 });
-    });
-});
 
 describe('stationRadius', () => {
     it('is the base radius for an idle station', () => {
@@ -122,8 +102,10 @@ describe('createStationLayer', () => {
 
         expect(layer.props.data).toBe(data.stations);
         expect(getPosition(data.stations[1])).toEqual([-0.2, 51.6]);
-        expect(getRadius(null, { index: 0 })).toBe(stationRadius(activityAt(data, 0, 2)));
-        expect(getFillColor(null, { index: 1 })).toEqual(stationColor(activityAt(data, 1, 2)));
+        expect(getRadius(null, { index: 0 })).toBe(stationRadius(activityAtPosition(data, 0, 2)));
+        expect(getFillColor(null, { index: 1 })).toEqual(
+            stationColor(activityAtPosition(data, 1, 2))
+        );
     });
 });
 
@@ -197,57 +179,88 @@ describe('binPositionAt', () => {
     });
 });
 
-// One station over eight bins with a single spike in the middle
+// One station over 24 bins (4 hours) with a single spike in the middle, long
+// enough that the smoothing doesn't wrap round onto itself
+const SPIKE_BIN = 12;
 function makeSpikeData(): HeartbeatData {
     const data = makeData();
+    const departures = new Uint16Array(24);
+    departures[SPIKE_BIN] = 40;
     return {
         ...data,
-        binCount: 8,
+        binCount: 24,
         stations: [data.stations[0]],
-        departures: new Uint16Array([0, 0, 0, 0, 40, 0, 0, 0]),
-        arrivals: new Uint16Array(8)
+        departures,
+        arrivals: new Uint16Array(24)
     };
 }
 
 describe('activityAtPosition', () => {
-    it('passes exactly through the bin values', () => {
-        const data = makeData();
+    // A fixed σ of 20 minutes (2 bins), so tuning the default doesn't change
+    // these expectations
+    const spikeAt = (position: number) =>
+        activityAtPosition(makeSpikeData(), 0, position, 20).departures;
 
-        expect(activityAtPosition(data, 0, 3)).toEqual(activityAt(data, 0, 3));
+    it('returns the raw counts with very little smoothing', () => {
+        expect(activityAtPosition(makeData(), 0, 3, 1)).toEqual({ departures: 9, arrivals: 0 });
+        expect(activityAtPosition(makeData(), 1, 3, 1)).toEqual({ departures: 0, arrivals: 2 });
     });
 
-    it('follows a straight line where the bins do', () => {
-        const data = makeData();
-        // Smoothed bins 0 to 3 are 3, 4.5, 6, 7.5: a quarter from bin 1 to 2
-        expect(activityAtPosition(data, 0, 1.25).departures).toBeCloseTo(4.875);
-    });
-
-    it('has no kink at a bin: the slope is the same either side', () => {
-        const data = makeSpikeData();
-        const at = (position: number) => activityAtPosition(data, 0, position).departures;
-        const step = 1e-4;
-        // Bin 2 is where the smoothed spike levels off (bins 1, 2, 3 = 0, 8, 8),
-        // so straight-line blending would turn sharply here: slope 8, then 0
-        const slopeBefore = (at(2) - at(2 - step)) / step;
-        const slopeAfter = (at(2 + step) - at(2)) / step;
-
-        expect(slopeAfter).toBeCloseTo(slopeBefore, 1);
-    });
-
-    it('never goes below zero beside a spike', () => {
-        const data = makeSpikeData();
-
-        for (let position = 0; position < 8; position += 0.05) {
-            expect(activityAtPosition(data, 0, position).departures).toBeGreaterThanOrEqual(0);
+    it('keeps a steady station steady', () => {
+        // Station 1 has 2 arrivals in every bin, so any weighted average is 2
+        for (let position = 0; position < 5; position += 0.25) {
+            expect(activityAtPosition(makeData(), 1, position).arrivals).toBeCloseTo(2);
         }
+    });
+
+    it('spreads a spike into a bell curve centred on it', () => {
+        // σ = 20 minutes = 2 bins, so the peak is 40 / (2√(2π)) ≈ 7.98
+        expect(spikeAt(SPIKE_BIN)).toBeCloseTo(40 / (2 * Math.sqrt(2 * Math.PI)), 1);
+        // Symmetric either side, and falling with distance
+        expect(spikeAt(SPIKE_BIN - 1.3)).toBeCloseTo(spikeAt(SPIKE_BIN + 1.3));
+        expect(spikeAt(SPIKE_BIN + 1)).toBeLessThan(spikeAt(SPIKE_BIN));
+        expect(spikeAt(SPIKE_BIN + 2)).toBeLessThan(spikeAt(SPIKE_BIN + 1));
+    });
+
+    it.each([
+        // A bin's middle, and a boundary between bins, on the spike's rising side
+        [SPIKE_BIN - 2],
+        [SPIKE_BIN - 1.5]
+    ])('changes smoothly through position %d: no step or kink', (position) => {
+        const step = 1e-4;
+        const before = spikeAt(position - step);
+        const after = spikeAt(position + step);
+
+        // No step: the values either side meet
+        expect(after).toBeCloseTo(before, 3);
+        // No kink: the slope is the same either side
+        const slopeBefore = (spikeAt(position) - before) / step;
+        const slopeAfter = (after - spikeAt(position)) / step;
+        expect(slopeAfter).toBeCloseTo(slopeBefore, 1);
     });
 
     it('runs from the last bin into the first without a jump', () => {
         const data = makeData();
 
         expect(activityAtPosition(data, 0, 4.9999).departures).toBeCloseTo(
-            activityAt(data, 0, 0).departures,
+            activityAtPosition(data, 0, 0).departures,
             2
         );
     });
+});
+
+describe('activitiesAtPosition', () => {
+    it.each([[2], [2.5], [4.9]])(
+        'matches activityAtPosition for every station at position %d',
+        (position) => {
+            const data = makeData();
+
+            data.stations.forEach((_, station) => {
+                const expected = activityAtPosition(data, station, position);
+                const actual = activitiesAtPosition(data, position)[station];
+                expect(actual.departures).toBeCloseTo(expected.departures, 10);
+                expect(actual.arrivals).toBeCloseTo(expected.arrivals, 10);
+            });
+        }
+    );
 });

@@ -23,10 +23,14 @@ export const COLOR_BALANCED: RGB = [138, 138, 133];
 // A thin ring in the map's background colour keeps overlapping dots distinct
 const OUTLINE_COLOR: RGBA = [14, 14, 14, 200];
 
-// Average each bin with this many bins either side (2 = a 50-minute window), so
-// dots follow the hourly trend rather than flickering with 10-minute noise.
-// Wider than the MVP's 30 minutes because playback now runs twice as fast.
-export const SMOOTHING_BINS = 2;
+// Activity is a Gaussian-weighted average of nearby bins with this standard
+// deviation, so dots follow the hourly trend rather than 10-minute noise. Each
+// bin's weight fades gradually with distance, so no bin enters or leaves the
+// average suddenly and dots don't step at bin boundaries.
+export const SMOOTHING_SIGMA_MINUTES = 30;
+// Bins further away than this many standard deviations are left out: their
+// weight is too small to see
+const SMOOTHING_CUTOFF_SIGMAS = 4;
 
 // Dot area grows with activity, so the radius grows with its square root.
 // Metres, so dots scale with the map's zoom and line up across wall tiles.
@@ -44,27 +48,6 @@ const MAX_ALPHA = 255;
 // station doesn't turn it fully red or blue
 const NET_FLOW_DAMPING = 1;
 
-// A station's smoothed activity around one bin. Bins near the start or end of
-// the period average over the bins that exist.
-export function activityAt(
-    data: HeartbeatData,
-    station: number,
-    bin: number,
-    smoothingBins = SMOOTHING_BINS
-): StationActivity {
-    const first = Math.max(0, bin - smoothingBins);
-    const last = Math.min(data.binCount - 1, bin + smoothingBins);
-    let departures = 0;
-    let arrivals = 0;
-    for (let b = first; b <= last; b++) {
-        const index = countIndex(data, station, b);
-        departures += data.departures[index];
-        arrivals += data.arrivals[index];
-    }
-    const binsAveraged = last - first + 1;
-    return { departures: departures / binsAveraged, arrivals: arrivals / binsAveraged };
-}
-
 // Fractional bin position for a time in minutes since the data's start,
 // wrapped to the data's period. Shifted by half a bin so each count is shown at
 // the middle of the 10 minutes it describes.
@@ -73,42 +56,67 @@ export function binPositionAt(data: HeartbeatData, minutes: number) {
     return ((position % data.binCount) + data.binCount) % data.binCount;
 }
 
-// A station's activity between bins, following a smooth curve through the bin
-// values (Catmull-Rom), so dots grow and fade without the kinks that straight-
-// line blending makes at each bin. The curve uses the bins either side of the
-// two nearest; after the last bin it continues into the first, so the
-// fortnight loops seamlessly.
+// A station's smoothed activity at a (fractional) bin position, where position
+// n is the middle of bin n: the average of nearby bins, each weighted by
+// exp(-d² / 2σ²) for its distance d. After the last bin it continues into the
+// first, so the fortnight loops seamlessly.
 export function activityAtPosition(
     data: HeartbeatData,
     station: number,
-    binPosition: number
+    binPosition: number,
+    sigmaMinutes = SMOOTHING_SIGMA_MINUTES
 ): StationActivity {
-    const lower = Math.floor(binPosition);
-    const t = binPosition - lower;
-    if (t === 0) return activityAt(data, station, lower);
-
-    const at = (offset: number) => {
-        const bin = (((lower + offset) % data.binCount) + data.binCount) % data.binCount;
-        return activityAt(data, station, bin);
-    };
-    const [p0, p1, p2, p3] = [at(-1), at(0), at(1), at(2)];
-    return {
-        departures: catmullRom(p0.departures, p1.departures, p2.departures, p3.departures, t),
-        arrivals: catmullRom(p0.arrivals, p1.arrivals, p2.arrivals, p3.arrivals, t)
-    };
+    return weightedActivity(data, station, smoothingWeights(data, binPosition, sigmaMinutes));
 }
 
-// Value at t (0 to 1) on the Catmull-Rom curve between p1 and p2, shaped by p0
-// and p3. The curve can dip slightly below zero next to a quiet bin, which a
-// count can't, so it is clamped.
-function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number) {
-    const value =
-        0.5 *
-        (2 * p1 +
-            (p2 - p0) * t +
-            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
-            (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
-    return Math.max(0, value);
+// Every station's smoothed activity at a bin position, in station order. The
+// same as `activityAtPosition` for each station, but the weights depend only on
+// the position, so they are worked out once for all stations.
+export function activitiesAtPosition(
+    data: HeartbeatData,
+    binPosition: number,
+    sigmaMinutes = SMOOTHING_SIGMA_MINUTES
+): StationActivity[] {
+    const weights = smoothingWeights(data, binPosition, sigmaMinutes);
+    return data.stations.map((_, station) => weightedActivity(data, station, weights));
+}
+
+// The bins near a position (wrapped to the period) and their Gaussian weights,
+// scaled to add up to 1
+type SmoothingWeights = { bins: number[]; weights: number[] };
+
+function smoothingWeights(
+    data: HeartbeatData,
+    binPosition: number,
+    sigmaMinutes: number
+): SmoothingWeights {
+    const sigmaBins = sigmaMinutes / data.binMinutes;
+    const reach = Math.ceil(SMOOTHING_CUTOFF_SIGMAS * sigmaBins);
+    const nearest = Math.round(binPosition);
+    const bins: number[] = [];
+    const weights: number[] = [];
+    for (let bin = nearest - reach; bin <= nearest + reach; bin++) {
+        const distance = bin - binPosition;
+        bins.push(((bin % data.binCount) + data.binCount) % data.binCount);
+        weights.push(Math.exp(-(distance * distance) / (2 * sigmaBins * sigmaBins)));
+    }
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    return { bins, weights: weights.map((weight) => weight / totalWeight) };
+}
+
+function weightedActivity(
+    data: HeartbeatData,
+    station: number,
+    { bins, weights }: SmoothingWeights
+): StationActivity {
+    let departures = 0;
+    let arrivals = 0;
+    for (let i = 0; i < bins.length; i++) {
+        const index = countIndex(data, station, bins[i]);
+        departures += weights[i] * data.departures[index];
+        arrivals += weights[i] * data.arrivals[index];
+    }
+    return { departures, arrivals };
 }
 
 export function stationRadius({ departures, arrivals }: StationActivity) {
@@ -135,9 +143,7 @@ export function stationColor({ departures, arrivals }: StationActivity): RGBA {
 // The deck.gl layer drawing every station at a (fractional) bin position
 export function createStationLayer(data: HeartbeatData, binPosition: number) {
     // Work out each station's activity once, rather than in both accessors
-    const activities = data.stations.map((_, station) =>
-        activityAtPosition(data, station, binPosition)
-    );
+    const activities = activitiesAtPosition(data, binPosition);
 
     return new ScatterplotLayer<HeartbeatStation>({
         id: 'stations',
@@ -188,8 +194,7 @@ export function stationPoints(data: HeartbeatData): GeoJSON.FeatureCollection<Ge
 // Every station's size and colour at a (fractional) bin position, in station
 // order, computed with the same rules as the deck.gl layer
 export function stationStyles(data: HeartbeatData, binPosition: number): StationStyle[] {
-    return data.stations.map((_, index) => {
-        const activity = activityAtPosition(data, index, binPosition);
+    return activitiesAtPosition(data, binPosition).map((activity) => {
         const [r, g, b, a] = stationColor(activity);
         return {
             radius: stationRadius(activity),

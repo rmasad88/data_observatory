@@ -35,6 +35,9 @@ const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.j
 // While playing, the fallback renderer restyles its circles at most 30 times a
 // second: smooth to the eye, with headroom when several iframes share a machine
 const FALLBACK_MIN_UPDATE_MS = 1000 / 30;
+// How often the fallback checks the size it is shown at. The simulator can be
+// resized at any time, and a CSS scale change fires no event inside the iframe.
+const DISPLAY_SIZE_CHECK_MS = 1000;
 // Fallback renderer's MapLibre source and layer for the stations
 const STATIONS_SOURCE_ID = 'stations-source';
 const STATIONS_LAYER_ID = 'stations-layer';
@@ -171,9 +174,10 @@ function ScreenPage() {
     const binPosition = heartbeat ? binPositionAt(heartbeat, minutes) : 0;
     const isPlaying = playback?.playing ?? false;
 
+    // Only the deck.gl renderer draws these layers, so the fallback skips them
     const layers = useMemo(
-        () => (heartbeat ? [createStationLayer(heartbeat, binPosition)] : []),
-        [heartbeat, binPosition]
+        () => (heartbeat && useDeckWrapper ? [createStationLayer(heartbeat, binPosition)] : []),
+        [heartbeat, binPosition, useDeckWrapper]
     );
 
     // Fallback: add the stations' points and circle layer to the map once
@@ -221,6 +225,20 @@ function ScreenPage() {
         });
     }, [fallbackReady, mapInstance, heartbeat, binPosition, isPlaying]);
 
+    // Fallback: draw at the resolution the screen is actually shown at, so a
+    // shrunken simulator iframe doesn't render detail nobody can see
+    useEffect(() => {
+        if (useDeckWrapper || !mapInstance) return;
+
+        const applyPixelRatio = () => {
+            const ratio = displayedPixelRatio();
+            if (ratio !== mapInstance.getPixelRatio()) mapInstance.setPixelRatio(ratio);
+        };
+        applyPixelRatio();
+        const timer = window.setInterval(applyPixelRatio, DISPLAY_SIZE_CHECK_MS);
+        return () => window.clearInterval(timer);
+    }, [useDeckWrapper, mapInstance]);
+
     return (
         <main className="pointer-events-none h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
             <div className="relative flex h-full w-full items-center justify-center">
@@ -267,6 +285,21 @@ function ScreenPage() {
             </div>
         </main>
     );
+}
+
+// Device pixels per CSS pixel that this screen is shown at. In the simulator the
+// iframe is laid out at 1920×1080 and shrunk to fit the page, so its true
+// resolution is the shown width over the laid-out width, times the display's
+// own ratio. Outside an iframe it is just the display's ratio.
+function displayedPixelRatio() {
+    // Null when not in an iframe (or in one from another site)
+    const frame = window.frameElement;
+    if (!frame) return window.devicePixelRatio;
+    // Measured on the parent page, so it includes the CSS scale
+    const shownWidth = frame.getBoundingClientRect().width;
+    // A hidden iframe has no size; keep the display's ratio
+    if (shownWidth === 0) return window.devicePixelRatio;
+    return (shownWidth / window.innerWidth) * window.devicePixelRatio;
 }
 
 function parseScreenCoordinate(value: unknown, size: number, fallback: number) {
