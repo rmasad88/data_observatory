@@ -1,5 +1,5 @@
-// What the wall's labels say and which screen shows each one. Kept free of
-// React so the rules can be unit-tested.
+// What the wall's labels say and how big they are. Kept free of React so the
+// rules can be unit-tested.
 
 import { COLOR_BALANCED, COLOR_GAINING, COLOR_LOSING, type RGB } from './heartbeat/layer';
 import { formatDataTime } from './playback';
@@ -8,14 +8,51 @@ import type { WallSize } from './wall-view';
 export const WALL_TITLE = "London's cycling heartbeat";
 export const WALL_SUBTITLE = 'Santander Cycles journeys, 1–14 July 2024 · TfL open data';
 
-export type TilePosition = { c: number; r: number };
+// Text sizes as fractions of one screen's height, so labels scale with the
+// wall. The starter's guidelines (BEST_PRACTICES.md, section 6) ask for primary
+// wall text of at least 20% of screen height, for viewing from up to ~10 m.
+const PRIMARY_TEXT_FRACTION = 0.2;
+const DATE_TEXT_FRACTION = 0.1;
+const SECONDARY_TEXT_FRACTION = 0.05;
+// Gap from the wall's edges, and padding inside the label panels
+const MARGIN_FRACTION = 0.04;
+const PADDING_FRACTION = 0.03;
+// The Data Observatory's rows. Smaller walls, like the 3 × 2 simulator, scale
+// the labels down in proportion, so they preview how much of the real wall
+// the labels cover rather than filling a small wall.
+const FULL_SIZE_WALL_ROWS = 4;
+// The title's width in multiples of its font size, estimated generously for
+// the app's semibold sans-serif. Used to shrink the title on narrow walls.
+const TITLE_WIDTH_EMS = 14;
 
-// Each label sits wholly on one screen, so no text is split across the bezels
-// between screens: the heading top left, the legend bottom left
-export function labelTiles(wall: WallSize): { heading: TilePosition; legend: TilePosition } {
+export type LabelSizes = {
+    // Font sizes in pixels
+    title: number;
+    clock: number;
+    date: number;
+    body: number;
+    // Spacing in pixels
+    margin: number;
+    padding: number;
+};
+
+// Label sizes for a wall. The title and clock are primary text. On a wall with
+// fewer rows than the Data Observatory everything shrinks in proportion (half
+// size on the simulator's 2 rows). The title runs along the wall's top row,
+// across screen bezels, and also shrinks if the wall is too narrow for it.
+export function labelSizes(wall: WallSize): LabelSizes {
+    const height = wall.screenHeight * Math.min(1, wall.rows / FULL_SIZE_WALL_ROWS);
+    const margin = MARGIN_FRACTION * height;
+    const padding = PADDING_FRACTION * height;
+    const primary = PRIMARY_TEXT_FRACTION * height;
+    const titleRoom = wall.cols * wall.screenWidth - 2 * (margin + padding);
     return {
-        heading: { c: 0, r: 0 },
-        legend: { c: 0, r: wall.rows - 1 }
+        title: Math.min(primary, titleRoom / TITLE_WIDTH_EMS),
+        clock: primary,
+        date: DATE_TEXT_FRACTION * height,
+        body: SECONDARY_TEXT_FRACTION * height,
+        margin,
+        padding
     };
 }
 

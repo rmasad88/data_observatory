@@ -1,47 +1,104 @@
-import { legendEntries, WALL_SUBTITLE, WALL_TITLE } from '../lib/wall-labels';
+import type { CSSProperties } from 'react';
 
-// Sized for a 1920×1080 screen viewed from a few metres away. A dark panel keeps
-// the text readable over the map and the dots.
-const PANEL_CLASS = 'rounded-3xl bg-zinc-950/80 px-12 py-10 text-zinc-100 shadow-2xl';
+import { labelSizes, legendEntries, WALL_SUBTITLE, WALL_TITLE } from '../lib/wall-labels';
+import type { WallSize } from '../lib/wall-view';
 
-type HeadingProps = {
+// A dark panel keeps the text readable over the map and the dots
+const PANEL_CLASS = 'absolute rounded-3xl bg-zinc-950/80 text-zinc-100 shadow-2xl';
+
+type Props = {
+    wall: WallSize;
+    // This screen's column and row on the wall
+    c: number;
+    r: number;
     // The moment being shown; omitted until the data has loaded
     clock?: { date: string; time: string };
 };
 
-// Title, data source and the wall's clock, for the top-left screen
-export function WallHeading({ clock }: HeadingProps) {
-    return (
-        <div className={`${PANEL_CLASS} absolute top-16 left-16 max-w-[1100px]`}>
-            <h1 className="text-7xl font-semibold tracking-tight">{WALL_TITLE}</h1>
-            <p className="mt-4 text-3xl text-zinc-400">{WALL_SUBTITLE}</p>
-            {clock ? (
-                <p className="mt-10 flex items-baseline gap-8">
-                    {/* Fixed-width digits stop the time jittering as it changes */}
-                    <span className="text-9xl font-semibold tabular-nums">{clock.time}</span>
-                    <span className="text-5xl text-zinc-300">{clock.date}</span>
-                </p>
-            ) : null}
-        </div>
-    );
-}
+// The wall's labels, laid out once across the whole wall: the title and clock
+// along the top left, the legend at the bottom left. Each screen draws the whole
+// layer shifted by its own position and shows only its slice, like the map, so
+// a label can run across the bezel between screens.
+export function WallLabels({ wall, c, r, clock }: Props) {
+    const sizes = labelSizes(wall);
+    const panelStyle: CSSProperties = { padding: sizes.padding };
+    const swatchSize = sizes.body * 0.8;
 
-// What the dots' colours and sizes mean, for the bottom-left screen
-export function WallLegend() {
     return (
-        <div className={`${PANEL_CLASS} absolute bottom-16 left-16`}>
-            <ul className="space-y-5 text-4xl">
-                {legendEntries().map((entry) => (
-                    <li key={entry.label} className="flex items-center gap-6">
+        <div
+            className="absolute"
+            style={{
+                left: -c * wall.screenWidth,
+                top: -r * wall.screenHeight,
+                width: wall.cols * wall.screenWidth,
+                height: wall.rows * wall.screenHeight
+            }}
+        >
+            <div
+                className={PANEL_CLASS}
+                style={{ ...panelStyle, top: sizes.margin, left: sizes.margin }}
+            >
+                <h1
+                    className="leading-none font-semibold tracking-tight whitespace-nowrap"
+                    style={{ fontSize: sizes.title }}
+                >
+                    {WALL_TITLE}
+                </h1>
+                <p
+                    className="text-zinc-400"
+                    style={{ fontSize: sizes.body, marginTop: sizes.padding / 2 }}
+                >
+                    {WALL_SUBTITLE}
+                </p>
+                {clock ? (
+                    <p
+                        className="flex items-baseline leading-none"
+                        style={{ gap: sizes.padding, marginTop: sizes.padding }}
+                    >
+                        {/* Fixed-width digits stop the time jittering as it changes */}
                         <span
-                            className="inline-block h-10 w-10 rounded-full"
-                            style={{ backgroundColor: entry.color }}
-                        />
-                        {entry.label}
-                    </li>
-                ))}
-            </ul>
-            <p className="mt-8 text-3xl text-zinc-400">Bigger dot: more journeys</p>
+                            className="font-semibold tabular-nums"
+                            style={{ fontSize: sizes.clock }}
+                        >
+                            {clock.time}
+                        </span>
+                        <span className="text-zinc-300" style={{ fontSize: sizes.date }}>
+                            {clock.date}
+                        </span>
+                    </p>
+                ) : null}
+            </div>
+
+            <div
+                className={PANEL_CLASS}
+                style={{ ...panelStyle, bottom: sizes.margin, left: sizes.margin }}
+            >
+                <ul style={{ fontSize: sizes.body }}>
+                    {legendEntries().map((entry) => (
+                        <li
+                            key={entry.label}
+                            className="flex items-center"
+                            style={{ gap: sizes.padding / 2 }}
+                        >
+                            <span
+                                className="inline-block shrink-0 rounded-full"
+                                style={{
+                                    width: swatchSize,
+                                    height: swatchSize,
+                                    backgroundColor: entry.color
+                                }}
+                            />
+                            {entry.label}
+                        </li>
+                    ))}
+                </ul>
+                <p
+                    className="text-zinc-400"
+                    style={{ fontSize: sizes.body, marginTop: sizes.padding / 2 }}
+                >
+                    Bigger dot: more journeys
+                </p>
+            </div>
         </div>
     );
 }
