@@ -1,0 +1,51 @@
+# Format, lint, type-check and build the website in apps/
+name: Frontend
+
+on:
+    push:
+        paths:
+            - 'apps/**'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
+            - 'pnpm-workspace.yaml'
+            - 'tsconfig.json'
+            - 'vite.config.ts'
+            - '.github/workflows/frontend.yml'
+    pull_request:
+        paths:
+            - 'apps/**'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
+            - 'pnpm-workspace.yaml'
+            - 'tsconfig.json'
+            - 'vite.config.ts'
+            - '.github/workflows/frontend.yml'
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Installs the pnpm version pinned in package.json's packageManager
+            - uses: pnpm/action-setup@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: pnpm
+
+            # Fail rather than silently update if the lockfile is out of date
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Check formatting
+              run: pnpm exec vp fmt --check
+
+            - name: Lint
+              run: pnpm exec vp lint
+
+            # The website's build script runs the TypeScript compiler first
+            - name: Type-check and build
+              run: pnpm exec vp run build -r

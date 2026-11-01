@@ -1,0 +1,51 @@
+# Lint and test the Python analysis code in analysis/
+name: Analysis
+
+on:
+    push:
+        paths:
+            - 'analysis/**'
+            - '.github/workflows/analysis.yml'
+    pull_request:
+        paths:
+            - 'analysis/**'
+            - '.github/workflows/analysis.yml'
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        # Login shell so the conda environment is active in every step
+        defaults:
+            run:
+                shell: bash -el {0}
+                working-directory: analysis
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Reuse downloaded conda packages while environment.yml is unchanged
+            - uses: actions/cache@v4
+              with:
+                  path: ~/conda_pkgs_dir
+                  key: conda-${{ runner.os }}-${{ hashFiles('analysis/environment.yml') }}
+
+            - uses: conda-incubator/setup-miniconda@v3
+              with:
+                  # Miniforge uses conda-forge only, matching environment.yml
+                  miniforge-version: latest
+                  environment-file: analysis/environment.yml
+                  activate-environment: d4h
+                  pkgs-dirs: ~/conda_pkgs_dir
+
+            # The real-data tests download about 60 MB from TfL; caching it keeps
+            # CI fast and avoids depending on TfL being up for every run
+            - uses: actions/cache@v4
+              with:
+                  path: analysis/data/raw
+                  key: tfl-raw-data-v1
+
+            - name: Lint
+              run: flake8 .
+
+            - name: Test
+              run: pytest -v

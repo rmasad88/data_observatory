@@ -25,6 +25,9 @@ JOURNEY_COLUMNS = {
 }
 JOURNEY_DATE_FORMAT = "%Y-%m-%d %H:%M"
 
+# Columns returned by load_stations, in order
+STATION_COLUMNS = ["terminal", "name", "lat", "lon", "docks"]
+
 
 def download_file(
     url: str, dest_dir: Path, filename: str | None = None
@@ -88,7 +91,17 @@ def load_journeys(paths: list[Path]) -> pd.DataFrame:
         One row per journey, with the columns renamed as in
         ``JOURNEY_COLUMNS``, parsed ``start``/``end`` timestamps and
         station numbers kept as strings.
+
+    Raises
+    ------
+    ValueError
+        If ``paths`` is empty.
     """
+    # An empty list is almost always a mistake, and pd.concat's own error
+    # ("No objects to concatenate") doesn't say what went wrong
+    if not paths:
+        raise ValueError("load_journeys needs at least one journey file")
+
     frames = [
         pd.read_csv(
             path,
@@ -127,7 +140,13 @@ def load_stations(path: Path) -> pd.DataFrame:
     -------
     pandas.DataFrame
         One row per station with ``terminal``, ``name``, ``lat``, ``lon``
-        and ``docks`` columns.
+        and ``docks`` columns. Empty, but with those columns, if the
+        response lists no stations.
+
+    Raises
+    ------
+    KeyError
+        If a station is missing its ``TerminalName`` or ``NbDocks``.
     """
     rows = []
     for point in json.loads(Path(path).read_text()):
@@ -143,8 +162,4 @@ def load_stations(path: Path) -> pd.DataFrame:
                 "docks": int(props["NbDocks"]),
             }
         )
-    return pd.DataFrame(rows)
-
-def test_function():
-    print("This is a test function in tfl_cycles_lib.py")
-
+    return pd.DataFrame(rows, columns=STATION_COLUMNS)

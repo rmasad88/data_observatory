@@ -1,0 +1,247 @@
+"""Tests for tfl_cycles_lib."""
+
+import json
+from pathlib import Path
+
+import pandas as pd
+import pytest
+import requests
+
+from tfl_cycles_lib import (
+    JOURNEY_COLUMNS,
+    STATION_COLUMNS,
+    download_file,
+    load_journeys,
+    load_stations,
+)
+
+# Real data is cached in the same folder the notebook uses, so it is only
+# downloaded once across test runs and notebook sessions
+RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
+JOURNEYS_URL = (
+    "https://cycling.data.tfl.gov.uk/usage-stats/"
+    "399JourneyDataExtract01Jul2024-14Jul2024.csv"
+)
+BIKEPOINT_URL = "https://api.tfl.gov.uk/BikePoint"
+
+# .invalid is a reserved domain, so any real request to it would fail
+UNREACHABLE_URL = "https://example.invalid/cached.csv"
+
+# A three-row sample in the real column layout, including columns that
+# load_journeys should ignore. Row 0 crosses midnight, row 1 has no bike
+# number and row 2 is a round trip.
+SAMPLE_JOURNEYS_CSV = """\
+Number,Start date,Start station number,Start station,End date,\
+End station number,End station,Bike number,Bike model,Total duration,\
+Total duration (ms)
+1,2024-07-01 23:50,001036,A,2024-07-02 00:10,003434,B,62221,CLASSIC,\
+20m 0s,1200000
+2,2024-07-01 08:00,300047,C,2024-07-01 08:15,001036,A,,PBSC_EBIKE,\
+15m 0s,900000
+3,2024-07-01 12:00,001007,D,2024-07-01 12:05,001007,D,20895,CLASSIC,\
+5m 0s,300000
+"""
+
+
+def bikepoint_station(terminal, docks="20"):
+    """Build one station in the BikePoint API's nested layout."""
+    props = [{"key": "TerminalName", "value": terminal}]
+    if docks is not None:
+        props.append({"key": "NbDocks", "value": docks})
+    return {
+        "commonName": "Test Street, Somewhere",
+        "lat": 51.5,
+        "lon": -0.1,
+        "additionalProperties": props,
+    }
+
+
+# Fixtures ---------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def journeys():
+    """The real July 2024 journeys, downloaded once per test session."""
+    return load_journeys([download_file(JOURNEYS_URL, RAW_DIR)])
+
+
+@pytest.fixture(scope="session")
+def stations():
+    """The real BikePoint stations, downloaded once per test session."""
+    path = download_file(BIKEPOINT_URL, RAW_DIR, filename="bikepoint.json")
+    return load_stations(path)
+
+
+@pytest.fixture
+def sample_csv(tmp_path):
+    """Path to a small journeys CSV in a temporary folder."""
+    path = tmp_path / "sample.csv"
+    path.write_text(SAMPLE_JOURNEYS_CSV)
+    return path
+
+
+@pytest.fixture
+def sample_journeys(sample_csv):
+    """The small sample loaded with load_journeys."""
+    return load_journeys([sample_csv])
+
+
+@pytest.fixture
+def bikepoint_json(tmp_path):
+    """Write a list of stations as a BikePoint JSON file and return it."""
+
+    def write(stations):
+        path = tmp_path / "bikepoint.json"
+        path.write_text(json.dumps(stations))
+        return path
+
+    return write
+
+
+# download_file ----------------------------------------------------------
+
+
+def test_download_reuses_cached_file(tmp_path):
+    cached = tmp_path / "cached.csv"
+    cached.write_text("already here")
+
+    assert download_file(UNREACHABLE_URL, tmp_path) == cached
+    assert cached.read_text() == "already here"
+
+
+def test_download_filename_overrides_url_name(tmp_path):
+    custom = tmp_path / "custom.json"
+    custom.write_text("{}")
+
+    result = download_file(UNREACHABLE_URL, tmp_path, filename="custom.json")
+    assert result == custom
+
+
+def test_download_default_name_ignores_trailing_slash(tmp_path):
+    cached = tmp_path / "cached.csv"
+    cached.write_text("already here")
+
+    assert download_file(UNREACHABLE_URL + "/", tmp_path) == cached
+
+
+def test_download_http_error_leaves_no_file(tmp_path):
+    with pytest.raises(requests.HTTPError):
+        download_file(
+            "https://api.tfl.gov.uk/NoSuchEndpoint", tmp_path, "bad.json"
+        )
+
+    assert not (tmp_path / "bad.json").exists()
+    assert not (tmp_path / "bad.json.part").exists()
+
+
+# load_journeys: small sample --------------------------------------------
+
+
+def test_load_journeys_keeps_leading_zeros(sample_journeys):
+    assert sample_journeys.loc[0, "start_terminal"] == "001036"
+
+
+def test_load_journeys_missing_bike_id_is_na(sample_journeys):
+    # The other IDs stay whole numbers rather than becoming floats
+    assert sample_journeys["bike_id"].dtype == "Int64"
+    assert pd.isna(sample_journeys.loc[1, "bike_id"])
+    assert sample_journeys.loc[0, "bike_id"] == 62221
+
+
+def test_load_journeys_midnight_crossing(sample_journeys):
+    assert sample_journeys.loc[0, "start"] == pd.Timestamp("2024-07-01 23:50")
+    assert sample_journeys.loc[0, "end"] == pd.Timestamp("2024-07-02 00:10")
+
+
+def test_load_journeys_concatenates_files(sample_csv):
+    assert len(load_journeys([sample_csv, sample_csv])) == 6
+
+
+def test_load_journeys_missing_column_raises(tmp_path):
+    # Simulates an older TfL layout with a renamed column
+    old_layout = tmp_path / "old_layout.csv"
+    old_layout.write_text(
+        SAMPLE_JOURNEYS_CSV.replace("Bike model", "Bike type")
+    )
+
+    with pytest.raises(ValueError):
+        load_journeys([old_layout])
+
+
+def test_load_journeys_empty_list_raises():
+    with pytest.raises(ValueError, match="at least one journey file"):
+        load_journeys([])
+
+
+# load_journeys: real data -----------------------------------------------
+
+
+def test_journeys_columns_match_renamed_set(journeys):
+    assert list(journeys.columns) == list(JOURNEY_COLUMNS.values())
+
+
+def test_journeys_station_numbers_keep_leading_zeros(journeys):
+    assert journeys["start_terminal"].str.startswith("0").any()
+    assert journeys["start_terminal"].str.len().min() == 6
+
+
+def test_journeys_times_are_datetimes(journeys):
+    assert pd.api.types.is_datetime64_any_dtype(journeys["start"])
+    assert pd.api.types.is_datetime64_any_dtype(journeys["end"])
+
+
+def test_journeys_rental_ids_unique(journeys):
+    assert journeys["rental_id"].is_unique
+
+
+# load_stations: small samples -------------------------------------------
+
+
+def test_load_stations_unpacks_nested_fields(bikepoint_json):
+    one = load_stations(bikepoint_json([bikepoint_station("001023")]))
+
+    assert one.loc[0, "terminal"] == "001023"
+    assert one.loc[0, "docks"] == 20
+    assert (one.loc[0, "lat"], one.loc[0, "lon"]) == (51.5, -0.1)
+
+
+def test_load_stations_missing_docks_raises(bikepoint_json):
+    path = bikepoint_json([bikepoint_station("001023", docks=None)])
+
+    with pytest.raises(KeyError):
+        load_stations(path)
+
+
+def test_load_stations_empty_keeps_columns(bikepoint_json):
+    empty = load_stations(bikepoint_json([]))
+
+    assert empty.empty
+    assert list(empty.columns) == STATION_COLUMNS
+
+
+# load_stations: real data -----------------------------------------------
+
+
+def test_stations_columns(stations):
+    assert list(stations.columns) == STATION_COLUMNS
+
+
+def test_stations_terminals_unique_six_chars(stations):
+    assert stations["terminal"].is_unique
+    assert (stations["terminal"].str.len() == 6).all()
+
+
+def test_stations_inside_greater_london(stations):
+    assert stations["lat"].between(51.3, 51.7).all()
+    assert stations["lon"].between(-0.5, 0.3).all()
+
+
+def test_stations_have_docks(stations):
+    assert (stations["docks"] > 0).all()
+
+
+def test_most_journeys_start_at_known_station(journeys, stations):
+    # Confirms the terminal numbers line up for the join; a few journeys
+    # use stations that have since moved or closed
+    known = journeys["start_terminal"].isin(stations["terminal"])
+    assert known.mean() > 0.95

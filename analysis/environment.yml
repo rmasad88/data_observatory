@@ -1,0 +1,21 @@
+# Conda environment for the analysis pipeline and notebook.
+# Create with:  conda env create -f analysis/environment.yml
+# Update with:  conda env update -f analysis/environment.yml --prune
+name: d4h
+channels:
+    - conda-forge
+dependencies:
+    - python=3.12
+    - pandas
+    - pyarrow
+    - requests
+    - scikit-learn
+    - osmnx
+    - matplotlib
+    # Notebook editing and running
+    - jupyterlab
+    - ipykernel
+    - nbconvert
+    # Linting and tests
+    - flake8
+    - pytest

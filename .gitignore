@@ -29,3 +29,7 @@ node_modules
 
 # Raw downloads for the analysis pipeline
 analysis/data/
+
+# Python caches
+__pycache__/
+.pytest_cache/
