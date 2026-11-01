@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from cleaning_lib import clean_journeys
 from loading_lib import download_file, get_stations, load_journeys
 
 # Real data is cached in the same folder the notebook uses, so it is only
@@ -41,3 +42,9 @@ def journeys(journeys_path):
 def stations_2024():
     """The 2024 station list, built once per test session."""
     return get_stations("2024", RAW_DIR)
+
+
+@pytest.fixture(scope="session")
+def cleaned(journeys, stations_2024):
+    """The real journeys after all cleaning rules."""
+    return clean_journeys(journeys, stations_2024)

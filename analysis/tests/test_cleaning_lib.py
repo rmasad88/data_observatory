@@ -5,7 +5,6 @@ import pytest
 
 from cleaning_lib import (
     LONG_HIRE_MAX_MS,
-    clean_journeys,
     drop_false_starts,
     drop_long_hires,
     drop_unknown_stations,
@@ -91,11 +90,6 @@ def test_drop_long_hires(duration_ms, dropped):
     journeys = make_journeys([("001020", "003429", duration_ms)])
 
     assert drop_long_hires(journeys).empty == dropped
-
-
-@pytest.fixture(scope="session")
-def cleaned(journeys, stations_2024):
-    return clean_journeys(journeys, stations_2024)
 
 
 def test_clean_journeys_keeps_relocated_station_journeys(cleaned):
