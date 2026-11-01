@@ -64,6 +64,33 @@ export function activityAt(
     return { departures: departures / binsAveraged, arrivals: arrivals / binsAveraged };
 }
 
+// Fractional bin position for a time in minutes since the data's start,
+// wrapped to the data's period. Shifted by half a bin so each count is shown at
+// the middle of the 10 minutes it describes.
+export function binPositionAt(data: HeartbeatData, minutes: number) {
+    const position = minutes / data.binMinutes - 0.5;
+    return ((position % data.binCount) + data.binCount) % data.binCount;
+}
+
+// A station's activity between bins, blending the two nearest in proportion,
+// so dots grow and fade continuously. After the last bin it blends into the
+// first, so the fortnight loops seamlessly.
+export function activityAtPosition(
+    data: HeartbeatData,
+    station: number,
+    binPosition: number
+): StationActivity {
+    const lower = Math.floor(binPosition);
+    const t = binPosition - lower;
+    const before = activityAt(data, station, lower);
+    if (t === 0) return before;
+    const after = activityAt(data, station, (lower + 1) % data.binCount);
+    return {
+        departures: lerp(before.departures, after.departures, t),
+        arrivals: lerp(before.arrivals, after.arrivals, t)
+    };
+}
+
 export function stationRadius({ departures, arrivals }: StationActivity) {
     return RADIUS_BASE_METERS + RADIUS_PER_SQRT_JOURNEY_METERS * Math.sqrt(departures + arrivals);
 }
@@ -85,10 +112,12 @@ export function stationColor({ departures, arrivals }: StationActivity): RGBA {
     ];
 }
 
-// The deck.gl layer drawing every station at one bin
-export function createStationLayer(data: HeartbeatData, bin: number) {
+// The deck.gl layer drawing every station at a (fractional) bin position
+export function createStationLayer(data: HeartbeatData, binPosition: number) {
     // Work out each station's activity once, rather than in both accessors
-    const activities = data.stations.map((_, station) => activityAt(data, station, bin));
+    const activities = data.stations.map((_, station) =>
+        activityAtPosition(data, station, binPosition)
+    );
 
     return new ScatterplotLayer<HeartbeatStation>({
         id: 'stations',
@@ -103,10 +132,10 @@ export function createStationLayer(data: HeartbeatData, bin: number) {
         getLineColor: OUTLINE_COLOR,
         lineWidthUnits: 'pixels',
         getLineWidth: 1,
-        // Recalculate sizes and colours only when the bin changes
+        // Recalculate sizes and colours only when the position changes
         updateTriggers: {
-            getRadius: bin,
-            getFillColor: bin
+            getRadius: binPosition,
+            getFillColor: binPosition
         }
     });
 }
@@ -120,15 +149,16 @@ export type StationFeatureProperties = {
     color: string;
 };
 
-// The stations as GeoJSON points carrying their size and colour for one bin
+// The stations as GeoJSON points carrying their size and colour at a
+// (fractional) bin position
 export function stationFeatures(
     data: HeartbeatData,
-    bin: number
+    binPosition: number
 ): GeoJSON.FeatureCollection<GeoJSON.Point, StationFeatureProperties> {
     return {
         type: 'FeatureCollection',
         features: data.stations.map((station, index) => {
-            const activity = activityAt(data, index, bin);
+            const activity = activityAtPosition(data, index, binPosition);
             const [r, g, b, a] = stationColor(activity);
             return {
                 type: 'Feature',

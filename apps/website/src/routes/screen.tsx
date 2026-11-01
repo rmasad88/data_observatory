@@ -5,7 +5,13 @@ import { Map, type MapRef } from '@vis.gl/react-maplibre';
 import type { GeoJSONSource } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createStationLayer, stationCirclePaint, stationFeatures } from '../lib/heartbeat/layer';
+import {
+    binPositionAt,
+    createStationLayer,
+    stationCirclePaint,
+    stationFeatures
+} from '../lib/heartbeat/layer';
+import { INITIAL_POSITION_MINUTES, playbackMinutes, wrapMinutes } from '../lib/playback';
 import { screenEngine } from '../lib/realtime/engines/screen-engine';
 import { useScreenStore } from '../lib/realtime/stores/screen-store';
 import { DEFAULT_MAP_VIEW, type ScreenMapViewState } from '../lib/realtime/types';
@@ -26,10 +32,9 @@ const WALL: WallSize = {
 // Shared animation timings so transitions feel identical across all screen nodes.
 const MAP_TRANSITION_DURATION_MS = 1200;
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-// Fixed moment shown until playback exists: Wednesday 10 July 08:30, the
-// morning peak, in minutes since the data's start (Monday 1 July 00:00).
-// To be replaced by the shared clock.
-const PREVIEW_MINUTES = (9 * 24 + 8.5) * 60;
+// The fallback renderer rebuilds its GeoJSON on each update, which is heavier
+// than deck.gl's redraw, so while playing it updates at most 15 times a second
+const FALLBACK_MIN_UPDATE_MS = 1000 / 15;
 // Fallback renderer's MapLibre source and layer for the stations
 const STATIONS_SOURCE_ID = 'stations-source';
 const STATIONS_LAYER_ID = 'stations-layer';
@@ -51,6 +56,8 @@ function ScreenPage() {
 
     const mapViewOverride = useScreenStore((state) => state.mapViewOverride);
     const heartbeat = useScreenStore((state) => state.heartbeat);
+    const playback = useScreenStore((state) => state.playback);
+    const clockOffsetMs = useScreenStore((state) => state.clockOffsetMs);
 
     // Frame all stations on the whole wall, then apply any operator changes.
     // Until the data loads, show the default view of London.
@@ -72,6 +79,10 @@ function ScreenPage() {
     const [useDeckWrapper, setUseDeckWrapper] = useState(false);
     const [animatedBaseMapView, setAnimatedBaseMapView] = useState(mapView);
     const animationFrameRef = useRef<number | null>(null);
+    // Minutes since the data's start being shown, wrapped to the fortnight
+    const [minutes, setMinutes] = useState(INITIAL_POSITION_MINUTES);
+    const playbackFrameRef = useRef<number | null>(null);
+    const lastFallbackUpdateRef = useRef(0);
     const [mapInstance, setMapInstance] = useState<ReturnType<MapRef['getMap']> | null>(null);
 
     const setMapRef = useCallback((instance: MapRef | null) => {
@@ -129,17 +140,48 @@ function ScreenPage() {
         return deriveScreenMapView(animatedBaseMapView, screenC, screenR);
     }, [animatedBaseMapView, screenC, screenR]);
 
-    // The bin shown, shared by both renderers
-    const bin = heartbeat ? Math.floor(PREVIEW_MINUTES / heartbeat.binMinutes) : 0;
+    // Follow the wall's shared clock. Every screen computes the same moment from
+    // the playback state and the server's time, so nothing is sent per frame.
+    useEffect(() => {
+        if (!isClient || !playback || !heartbeat) return;
+        const periodMinutes = heartbeat.binCount * heartbeat.binMinutes;
+        const currentMinutes = () =>
+            wrapMinutes(playbackMinutes(playback, Date.now() + clockOffsetMs), periodMinutes);
+
+        setMinutes(currentMinutes());
+        if (!playback.playing) return;
+
+        const tick = () => {
+            setMinutes(currentMinutes());
+            playbackFrameRef.current = requestAnimationFrame(tick);
+        };
+        playbackFrameRef.current = requestAnimationFrame(tick);
+
+        return () => {
+            if (playbackFrameRef.current !== null) {
+                cancelAnimationFrame(playbackFrameRef.current);
+                playbackFrameRef.current = null;
+            }
+        };
+    }, [isClient, playback, heartbeat, clockOffsetMs]);
+
+    // Position between bins shown, shared by both renderers
+    const binPosition = heartbeat ? binPositionAt(heartbeat, minutes) : 0;
+    const isPlaying = playback?.playing ?? false;
 
     const layers = useMemo(
-        () => (heartbeat ? [createStationLayer(heartbeat, bin)] : []),
-        [heartbeat, bin]
+        () => (heartbeat ? [createStationLayer(heartbeat, binPosition)] : []),
+        [heartbeat, binPosition]
     );
 
     useEffect(() => {
         if (!isClient || useDeckWrapper || !mapInstance || !heartbeat) return;
-        const features = stationFeatures(heartbeat, bin);
+
+        // While playing, skip updates that come sooner than the fallback's limit
+        const now = performance.now();
+        if (isPlaying && now - lastFallbackUpdateRef.current < FALLBACK_MIN_UPDATE_MS) return;
+        lastFallbackUpdateRef.current = now;
+        const features = stationFeatures(heartbeat, binPosition);
 
         // Create the source and layer once, then update the data in place
         // rather than rebuilding layers (see BEST_PRACTICES on wall performance).
@@ -165,7 +207,7 @@ function ScreenPage() {
         return () => {
             mapInstance.off('load', syncStations);
         };
-    }, [isClient, useDeckWrapper, mapInstance, heartbeat, bin]);
+    }, [isClient, useDeckWrapper, mapInstance, heartbeat, binPosition, isPlaying]);
 
     return (
         <main className="pointer-events-none h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">

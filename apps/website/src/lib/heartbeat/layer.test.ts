@@ -9,6 +9,8 @@ import {
     RADIUS_MIN_PIXELS,
     RADIUS_PER_SQRT_JOURNEY_METERS,
     activityAt,
+    activityAtPosition,
+    binPositionAt,
     createStationLayer,
     stationCirclePaint,
     stationColor,
@@ -159,5 +161,45 @@ describe('stationCirclePaint', () => {
 
         expect(zoom0[0]).toBe('max');
         expect(zoom0[1]).toBe(RADIUS_MIN_PIXELS);
+    });
+});
+
+describe('binPositionAt', () => {
+    it.each([
+        // The middle of the first bin (00:05) is position 0
+        [5, 0],
+        // 00:20 is the middle of bin 1 plus half a bin
+        [20, 1.5],
+        // Just after the start shows the end of the period, blending into bin 0
+        [0, 4.5],
+        // Past the end wraps round: 50 minutes is 00:00 again
+        [55, 0]
+    ])('maps %d minutes to position %d', (minutes, expected) => {
+        expect(binPositionAt(makeData(), minutes)).toBeCloseTo(expected);
+    });
+});
+
+describe('activityAtPosition', () => {
+    it('blends the two nearest bins in proportion', () => {
+        const data = makeData();
+        // A quarter of the way from bin 1 (smoothed 3) to bin 2 (smoothed 6)
+        const blended = activityAtPosition(data, 0, 1.25);
+
+        expect(blended.departures).toBeCloseTo(3 + 0.25 * (6 - 3));
+    });
+
+    it('matches activityAt exactly on a bin', () => {
+        const data = makeData();
+
+        expect(activityAtPosition(data, 0, 3)).toEqual(activityAt(data, 0, 3));
+    });
+
+    it('blends from the last bin into the first so the loop is seamless', () => {
+        const data = makeData();
+        const halfway = activityAtPosition(data, 0, 4.5);
+        const last = activityAt(data, 0, 4).departures;
+        const first = activityAt(data, 0, 0).departures;
+
+        expect(halfway.departures).toBeCloseTo((last + first) / 2);
     });
 });

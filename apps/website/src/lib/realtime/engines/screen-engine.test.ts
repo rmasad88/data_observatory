@@ -127,3 +127,55 @@ describe('camera overrides', () => {
         expect(screenStore.state.mapViewOverride).toEqual({ pitch: 20 });
     });
 });
+
+describe('playback', () => {
+    type BusHandlers = {
+        onMessage(message: unknown): void;
+        onHello(hello: unknown): void;
+    };
+    const PLAYING = { playing: true, positionMinutes: 0, speed: 24, startedAt: 1_000 };
+
+    it('stores playback/state and lines the clock up with the server', async () => {
+        loadHeartbeat.mockResolvedValue(FAKE_HEARTBEAT);
+        const { screenEngine, screenStore } = await freshScreenEngine();
+        const serverNow = Date.now() + 5_000;
+
+        (screenEngine as unknown as BusHandlers).onMessage({
+            type: 'playback/state',
+            state: PLAYING,
+            serverNow
+        });
+
+        expect(screenStore.state.playback).toEqual(PLAYING);
+        // This screen's clock is about 5 seconds behind the server's
+        expect(screenStore.state.clockOffsetMs).toBeGreaterThan(4_900);
+        expect(screenStore.state.clockOffsetMs).toBeLessThanOrEqual(5_000);
+    });
+
+    it('takes the playback state from hello when joining late', async () => {
+        loadHeartbeat.mockResolvedValue(FAKE_HEARTBEAT);
+        const { screenEngine, screenStore } = await freshScreenEngine();
+
+        (screenEngine as unknown as BusHandlers).onHello({
+            type: 'hello',
+            peerId: 'p1',
+            state: { mapViewOverride: {}, playback: PLAYING },
+            serverNow: Date.now()
+        });
+
+        expect(screenStore.state.playback).toEqual(PLAYING);
+    });
+
+    it('ignores an invalid playback state', async () => {
+        loadHeartbeat.mockResolvedValue(FAKE_HEARTBEAT);
+        const { screenEngine, screenStore } = await freshScreenEngine();
+
+        (screenEngine as unknown as BusHandlers).onMessage({
+            type: 'playback/state',
+            state: { ...PLAYING, speed: 'fast' },
+            serverNow: Date.now()
+        });
+
+        expect(screenStore.state.playback).toBeNull();
+    });
+});

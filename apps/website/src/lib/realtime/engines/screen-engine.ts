@@ -1,9 +1,11 @@
 import { loadHeartbeat } from '../../heartbeat/data';
+import { parsePlaybackState } from '../../playback';
 import { screenStore } from '../stores/screen-store';
 import type {
     BusMessage,
     HelloBusMessage,
     MapViewOverride,
+    PlaybackStateMessage,
     ScreenMapViewMessage,
     ScreenStoreState
 } from '../types';
@@ -84,6 +86,12 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
     protected override onMessage(message: BusMessage) {
         if (message.type === 'screen/map-view') {
             this.setMapViewOverride(validMapViewFields((message as ScreenMapViewMessage).view));
+            return;
+        }
+
+        if (message.type === 'playback/state') {
+            const { state, serverNow } = message as Partial<PlaybackStateMessage>;
+            this.applyPlayback(state, serverNow);
         }
     }
 
@@ -93,6 +101,20 @@ export class ScreenEngine extends BusEngine<ScreenStoreState> {
         // overrides rather than adding to them.
         const mapViewOverride = validMapViewFields(hello.state.mapViewOverride);
         this.store.setState((prev) => ({ ...prev, mapViewOverride }));
+        this.applyPlayback(hello.state.playback, hello.serverNow);
+    }
+
+    // Store the wall's playback state and line this screen's clock up with the
+    // server's. Message delivery takes a few milliseconds, which is far too
+    // little to see at playback speed.
+    private applyPlayback(state: unknown, serverNow: unknown) {
+        const playback = parsePlaybackState(state);
+        if (!playback || typeof serverNow !== 'number' || !Number.isFinite(serverNow)) return;
+        this.store.setState((prev) => ({
+            ...prev,
+            playback,
+            clockOffsetMs: serverNow - Date.now()
+        }));
     }
 }
 

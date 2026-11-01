@@ -12,5 +12,7 @@ export type {
     EngineStoreState,
     HelloBusMessage,
     MapViewOverride,
+    PlaybackSetMessage,
+    PlaybackStateMessage,
     ScreenMapViewMessage
 } from './types';
