@@ -20,12 +20,8 @@ async function freshScreenEngine() {
 
 beforeEach(() => {
     // A bare `window` lets the engine load data; without `window.location` it
-    // still skips opening a WebSocket. The demo arc data request just fails.
+    // still skips opening a WebSocket.
     vi.stubGlobal('window', {});
-    vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => new Response('Not found', { status: 404 }))
-    );
     loadHeartbeat.mockReset();
 });
 

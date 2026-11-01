@@ -1,21 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { defineHooks } from 'crossws';
 
-import type {
-    BusMessage,
-    BusSharedState,
-    ScreenMapViewMessage,
-    ScreenSegmentSelectionMessage
-} from '../lib/realtime';
-import { isMapCity } from '../lib/realtime/map-cities';
+import type { BusMessage, BusSharedState, ScreenMapViewMessage } from '../lib/realtime';
+import { DEFAULT_MAP_VIEW } from '../lib/realtime/types';
 
 // In-memory bus state for this server process.
 // New clients receive this snapshot in the `hello` handshake so they can
 // join late without waiting for another control interaction.
 const busSharedState: BusSharedState = {
-    city: 'london',
-    zoom: 9,
-    selectedSegmentIndexes: []
+    mapView: { ...DEFAULT_MAP_VIEW }
 };
 
 const hooks = defineHooks({
@@ -67,28 +60,18 @@ const hooks = defineHooks({
 });
 
 function updateBusSharedState(payload: Partial<BusMessage>) {
-    if (payload.type === 'screen/map-view') {
-        const message = payload as Partial<ScreenMapViewMessage>;
-        // Preserve last known valid city/zoom for hello-state replay.
-        if (isMapCity(message.city)) {
-            busSharedState.city = message.city;
+    if (payload.type !== 'screen/map-view') return;
+
+    const view = (payload as Partial<ScreenMapViewMessage>).view;
+    if (typeof view !== 'object' || view === null) return;
+
+    // Keep the last valid value of each camera field for hello-state replay.
+    const mapView = busSharedState.mapView;
+    for (const key of ['longitude', 'latitude', 'zoom', 'bearing', 'pitch'] as const) {
+        const value = view[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            mapView[key] = value;
         }
-
-        if (typeof message.view?.zoom === 'number') {
-            busSharedState.zoom = message.view.zoom;
-        }
-        return;
-    }
-
-    if (payload.type === 'screen/segment-selection') {
-        const message = payload as Partial<ScreenSegmentSelectionMessage>;
-        if (!Array.isArray(message.indexes)) return;
-
-        // Keep indexes deterministic for easier equality checks in clients and debugging.
-        busSharedState.selectedSegmentIndexes = message.indexes
-            .filter((value): value is number => Number.isInteger(value) && value >= 0)
-            .slice()
-            .sort((a, b) => a - b);
     }
 }
 
