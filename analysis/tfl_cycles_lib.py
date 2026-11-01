@@ -50,6 +50,10 @@ TERMINAL_LENGTH = 6
 # e.g. a faulty bike docked straight back
 FALSE_START_MAX_MS = 60_000
 
+# Hires longer than this are dropped: we can't know where the bike went,
+# so a route between its two stations would be meaningless
+LONG_HIRE_MAX_MS = 2 * 60 * 60 * 1000
+
 # Columns returned by load_stations, in order
 STATION_COLUMNS = ["terminal", "name", "lat", "lon", "docks"]
 
@@ -322,6 +326,23 @@ def drop_false_starts(journeys: pd.DataFrame) -> pd.DataFrame:
     return journeys[~false_start].reset_index(drop=True)
 
 
+def drop_long_hires(journeys: pd.DataFrame) -> pd.DataFrame:
+    """Drop hires longer than ``LONG_HIRE_MAX_MS``.
+
+    Parameters
+    ----------
+    journeys : pandas.DataFrame
+        Journeys as returned by ``load_journeys``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The journeys no longer than the limit, with a fresh index.
+    """
+    keep = journeys["duration_ms"] <= LONG_HIRE_MAX_MS
+    return journeys[keep].reset_index(drop=True)
+
+
 def clean_journeys(
     journeys: pd.DataFrame, stations: pd.DataFrame
 ) -> pd.DataFrame:
@@ -344,4 +365,5 @@ def clean_journeys(
     """
     journeys = map_relocated_terminals(journeys)
     journeys = drop_unknown_stations(journeys, stations)
-    return drop_false_starts(journeys)
+    journeys = drop_false_starts(journeys)
+    return drop_long_hires(journeys)

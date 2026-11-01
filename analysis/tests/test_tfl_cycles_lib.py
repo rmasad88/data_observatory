@@ -12,10 +12,12 @@ from tfl_cycles_lib import (
     JOURNEY_COLUMNS,
     SOURCE_CURRENT,
     SOURCE_SNAPSHOT_2024,
+    LONG_HIRE_MAX_MS,
     STATION_COLUMNS,
     clean_journeys,
     download_file,
     drop_false_starts,
+    drop_long_hires,
     drop_unknown_stations,
     get_stations,
     load_journeys,
@@ -419,6 +421,22 @@ def test_drop_false_starts(start, end, duration_ms, dropped):
     assert drop_false_starts(journeys).empty == dropped
 
 
+@pytest.mark.parametrize(
+    "duration_ms, dropped",
+    [
+        (LONG_HIRE_MAX_MS - 1, False),
+        (LONG_HIRE_MAX_MS, False),
+        (LONG_HIRE_MAX_MS + 1, True),
+        # A lost bike returned weeks later
+        (18 * 24 * 60 * 60 * 1000, True),
+    ],
+)
+def test_drop_long_hires(duration_ms, dropped):
+    journeys = make_journeys([("001020", "003429", duration_ms)])
+
+    assert drop_long_hires(journeys).empty == dropped
+
+
 @pytest.fixture(scope="session")
 def cleaned(journeys, stations_2024):
     return clean_journeys(journeys, stations_2024)
@@ -440,8 +458,12 @@ def test_clean_journeys_all_stations_known(cleaned, stations_2024):
     assert cleaned["end_terminal"].isin(known).all()
 
 
-def test_clean_journeys_removes_under_one_percent(journeys, cleaned):
-    # Workshops and false starts are a small fraction of all hires
+def test_clean_journeys_removes_under_two_percent(journeys, cleaned):
+    # Workshops, false starts and long hires are a small fraction of hires
     removed = 1 - len(cleaned) / len(journeys)
 
-    assert 0 < removed < 0.01
+    assert 0 < removed < 0.02
+
+
+def test_clean_journeys_drops_long_hires(cleaned):
+    assert cleaned["duration_ms"].max() <= LONG_HIRE_MAX_MS
