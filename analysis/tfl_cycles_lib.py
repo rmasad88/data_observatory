@@ -26,6 +26,21 @@ JOURNEY_COLUMNS = {
 }
 JOURNEY_DATE_FORMAT = "%Y-%m-%d %H:%M"
 
+# Live list of docking stations, describing the network today
+BIKEPOINT_URL = "https://api.tfl.gov.uk/BikePoint"
+
+# Archived station list from close to the July 2024 journeys; see
+# reference/README.md for its source and why it is used
+SNAPSHOT_2024_PATH = (
+    Path(__file__).resolve().parent
+    / "reference"
+    / "bikepoint_2024-08-20.json.gz"
+)
+
+# Values of the source column added by get_stations
+SOURCE_SNAPSHOT_2024 = "2024-08-20 snapshot"
+SOURCE_CURRENT = "current list"
+
 # Columns returned by load_stations, in order
 STATION_COLUMNS = ["terminal", "name", "lat", "lon", "docks"]
 
@@ -172,3 +187,51 @@ def load_stations(path: Path) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=STATION_COLUMNS)
+
+
+def get_stations(source: str, raw_dir: Path) -> pd.DataFrame:
+    """Build the station list to use, from the 2024 snapshot or today's list.
+
+    Parameters
+    ----------
+    source : {"2024", "current"}
+        ``"2024"`` uses the archived August 2024 snapshot, adding any
+        station it lacks from today's list. ``"current"`` uses today's
+        list only, which mislocates some 2024 journeys because TfL has
+        since closed stations and reused terminal numbers.
+    raw_dir : Path
+        Folder where today's BikePoint list is downloaded and cached.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The ``load_stations`` columns plus ``source``, recording which list
+        each station's details came from (``SOURCE_SNAPSHOT_2024`` or
+        ``SOURCE_CURRENT``).
+
+    Raises
+    ------
+    ValueError
+        If ``source`` is not ``"2024"`` or ``"current"``.
+    """
+    # Check before downloading anything
+    if source not in ("2024", "current"):
+        raise ValueError(
+            f'source must be "2024" or "current", not {source!r}'
+        )
+
+    current_path = download_file(
+        BIKEPOINT_URL, raw_dir, filename="bikepoint.json"
+    )
+    current = load_stations(current_path).assign(source=SOURCE_CURRENT)
+    if source == "current":
+        return current
+
+    snapshot = load_stations(SNAPSHOT_2024_PATH).assign(
+        source=SOURCE_SNAPSHOT_2024
+    )
+    # Fill gaps only: where both lists have a terminal, the snapshot wins.
+    # This also adds stations opened since 2024, which simply have no
+    # journeys in the 2024 data.
+    gaps = current[~current["terminal"].isin(snapshot["terminal"])]
+    return pd.concat([snapshot, gaps], ignore_index=True)

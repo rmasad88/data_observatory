@@ -10,8 +10,11 @@ import requests
 
 from tfl_cycles_lib import (
     JOURNEY_COLUMNS,
+    SOURCE_CURRENT,
+    SOURCE_SNAPSHOT_2024,
     STATION_COLUMNS,
     download_file,
+    get_stations,
     load_journeys,
     load_stations,
 )
@@ -273,3 +276,73 @@ def test_most_journeys_start_at_known_station(journeys, stations):
     # use stations that have since moved or closed
     known = journeys["start_terminal"].isin(stations["terminal"])
     assert known.mean() > 0.95
+
+
+# get_stations -----------------------------------------------------------
+
+# A typo in TfL's own journey file ("St. Lke's"), not a station mismatch
+KNOWN_NAME_TYPOS = {"000964"}
+
+
+@pytest.fixture(scope="session")
+def stations_2024():
+    return get_stations("2024", RAW_DIR)
+
+
+@pytest.fixture(scope="session")
+def journey_station_names():
+    """Each start terminal and the station name the journey file gives."""
+    path = download_file(JOURNEYS_URL, RAW_DIR)
+    names = pd.read_csv(
+        path, usecols=["Start station number", "Start station"], dtype=str
+    )
+    return names.drop_duplicates().set_axis(["terminal", "name"], axis=1)
+
+
+def test_get_stations_invalid_source_raises(tmp_path):
+    # Raises before trying to download anything into tmp_path
+    with pytest.raises(ValueError, match="2024"):
+        get_stations("2025", tmp_path)
+    assert not any(tmp_path.iterdir())
+
+
+def test_get_stations_current_is_todays_list(stations):
+    current = get_stations("current", RAW_DIR)
+
+    assert (current["source"] == SOURCE_CURRENT).all()
+    pd.testing.assert_frame_equal(current.drop(columns="source"), stations)
+
+
+def test_get_stations_2024_prefers_snapshot(stations_2024):
+    by_terminal = stations_2024.set_index("terminal")
+
+    # Reused terminal keeps its 2024 location
+    assert by_terminal.loc["001058", "name"].startswith("Edgware Road")
+    assert by_terminal.loc["001058", "source"] == SOURCE_SNAPSHOT_2024
+
+
+def test_get_stations_2024_fills_gaps_from_current(stations_2024):
+    by_terminal = stations_2024.set_index("terminal")
+
+    # Missing from the August 2024 snapshot but used in July 2024
+    assert by_terminal.loc["001203", "name"].startswith("Eastbourne Mews")
+    assert by_terminal.loc["001203", "source"] == SOURCE_CURRENT
+
+
+def test_get_stations_2024_terminals_unique(stations_2024):
+    assert stations_2024["terminal"].is_unique
+    assert list(stations_2024.columns) == STATION_COLUMNS + ["source"]
+
+
+def test_get_stations_2024_names_match_journey_file(
+    stations_2024, journey_station_names
+):
+    # The journey file names each station as it was in July 2024, so a
+    # mismatch means the list has the wrong station for that terminal
+    pairs = journey_station_names.merge(
+        stations_2024, on="terminal", suffixes=("_journey", "_list")
+    )
+    journey_names = pairs["name_journey"].str.strip()
+    differs = journey_names != pairs["name_list"].str.strip()
+
+    assert set(pairs.loc[differs, "terminal"]) == KNOWN_NAME_TYPOS
