@@ -7,7 +7,7 @@
         "dev": "vp dev",
         "build": "tsc && vp build",
         "preview": "vp preview",
-        "test": "vp test run"
+        "test": "tsc -p tsconfig.test.json && vp test run"
     },
     "dependencies": {
         "@base-ui/react": "catalog:",

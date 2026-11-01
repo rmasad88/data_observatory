@@ -1,0 +1,10 @@
+{
+    // Unit tests run in Node, so unlike app code they may use Node APIs such as
+    // fs (e.g. to read the committed heartbeat files)
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["vite/client", "node"]
+    },
+    "include": ["src/**/*.test.ts"],
+    "exclude": []
+}

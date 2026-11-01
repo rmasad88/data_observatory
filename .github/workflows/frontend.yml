@@ -46,6 +46,10 @@ jobs:
             - name: Lint
               run: pnpm exec vp lint
 
+            # Type-checks the tests, then runs them once
+            - name: Test
+              run: pnpm exec vp run test -r
+
             # The website's build script runs the TypeScript compiler first
             - name: Type-check and build
               run: pnpm exec vp run build -r

@@ -32,5 +32,8 @@
         "noUncheckedSideEffectImports": true,
         "forceConsistentCasingInFileNames": true
     },
-    "include": ["src"]
+    "include": ["src"],
+    // Tests run in Node and are type-checked by tsconfig.test.json, so app code
+    // only ever sees browser types
+    "exclude": ["src/**/*.test.ts"]
 }
