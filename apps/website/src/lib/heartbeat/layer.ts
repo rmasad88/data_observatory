@@ -23,9 +23,10 @@ export const COLOR_BALANCED: RGB = [138, 138, 133];
 // A thin ring in the map's background colour keeps overlapping dots distinct
 const OUTLINE_COLOR: RGBA = [14, 14, 14, 200];
 
-// Average each bin with this many bins either side (1 = a 30-minute window), so
-// dots follow the trend rather than flickering with 10-minute noise.
-export const SMOOTHING_BINS = 1;
+// Average each bin with this many bins either side (2 = a 50-minute window), so
+// dots follow the hourly trend rather than flickering with 10-minute noise.
+// Wider than the MVP's 30 minutes because playback now runs twice as fast.
+export const SMOOTHING_BINS = 2;
 
 // Dot area grows with activity, so the radius grows with its square root.
 // Metres, so dots scale with the map's zoom and line up across wall tiles.
@@ -72,9 +73,11 @@ export function binPositionAt(data: HeartbeatData, minutes: number) {
     return ((position % data.binCount) + data.binCount) % data.binCount;
 }
 
-// A station's activity between bins, blending the two nearest in proportion,
-// so dots grow and fade continuously. After the last bin it blends into the
-// first, so the fortnight loops seamlessly.
+// A station's activity between bins, following a smooth curve through the bin
+// values (Catmull-Rom), so dots grow and fade without the kinks that straight-
+// line blending makes at each bin. The curve uses the bins either side of the
+// two nearest; after the last bin it continues into the first, so the
+// fortnight loops seamlessly.
 export function activityAtPosition(
     data: HeartbeatData,
     station: number,
@@ -82,13 +85,30 @@ export function activityAtPosition(
 ): StationActivity {
     const lower = Math.floor(binPosition);
     const t = binPosition - lower;
-    const before = activityAt(data, station, lower);
-    if (t === 0) return before;
-    const after = activityAt(data, station, (lower + 1) % data.binCount);
-    return {
-        departures: lerp(before.departures, after.departures, t),
-        arrivals: lerp(before.arrivals, after.arrivals, t)
+    if (t === 0) return activityAt(data, station, lower);
+
+    const at = (offset: number) => {
+        const bin = (((lower + offset) % data.binCount) + data.binCount) % data.binCount;
+        return activityAt(data, station, bin);
     };
+    const [p0, p1, p2, p3] = [at(-1), at(0), at(1), at(2)];
+    return {
+        departures: catmullRom(p0.departures, p1.departures, p2.departures, p3.departures, t),
+        arrivals: catmullRom(p0.arrivals, p1.arrivals, p2.arrivals, p3.arrivals, t)
+    };
+}
+
+// Value at t (0 to 1) on the Catmull-Rom curve between p1 and p2, shaped by p0
+// and p3. The curve can dip slightly below zero next to a quiet bin, which a
+// count can't, so it is clamped.
+function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number) {
+    const value =
+        0.5 *
+        (2 * p1 +
+            (p2 - p0) * t +
+            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+            (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+    return Math.max(0, value);
 }
 
 export function stationRadius({ departures, arrivals }: StationActivity) {
@@ -142,34 +162,40 @@ export function createStationLayer(data: HeartbeatData, binPosition: number) {
 
 // --- Iframe-safe fallback: the same picture drawn with MapLibre's circle layer ---
 
-export type StationFeatureProperties = {
+// A station's size and colour for the fallback, set on its circle as MapLibre
+// "feature state" so it can change every frame without re-sending any geometry
+export type StationStyle = {
     // Radius in metres, as on the deck.gl path
     radius: number;
     // CSS colour, e.g. "rgba(230, 103, 103, 0.80)"
     color: string;
 };
 
-// The stations as GeoJSON points carrying their size and colour at a
-// (fractional) bin position
-export function stationFeatures(
-    data: HeartbeatData,
-    binPosition: number
-): GeoJSON.FeatureCollection<GeoJSON.Point, StationFeatureProperties> {
+// The stations as GeoJSON points, added to the map once. Each point's id is its
+// station index, which is how `stationStyles` entries are matched to it.
+export function stationPoints(data: HeartbeatData): GeoJSON.FeatureCollection<GeoJSON.Point> {
     return {
         type: 'FeatureCollection',
-        features: data.stations.map((station, index) => {
-            const activity = activityAtPosition(data, index, binPosition);
-            const [r, g, b, a] = stationColor(activity);
-            return {
-                type: 'Feature',
-                geometry: { type: 'Point', coordinates: station.position },
-                properties: {
-                    radius: stationRadius(activity),
-                    color: `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`
-                }
-            };
-        })
+        features: data.stations.map((station, index) => ({
+            type: 'Feature',
+            id: index,
+            geometry: { type: 'Point', coordinates: station.position },
+            properties: {}
+        }))
     };
+}
+
+// Every station's size and colour at a (fractional) bin position, in station
+// order, computed with the same rules as the deck.gl layer
+export function stationStyles(data: HeartbeatData, binPosition: number): StationStyle[] {
+    return data.stations.map((_, index) => {
+        const activity = activityAtPosition(data, index, binPosition);
+        const [r, g, b, a] = stationColor(activity);
+        return {
+            radius: stationRadius(activity),
+            color: `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`
+        };
+    });
 }
 
 // Metres per pixel at zoom 0 on the equator, for 512-pixel tiles as MapLibre uses
@@ -178,6 +204,9 @@ const EQUATOR_METERS_PER_PIXEL_Z0 = 78271.517;
 // (51.45 to 51.55) it varies by about 0.1%, which is invisible.
 const LONDON_LATITUDE = 51.5;
 const MAX_ZOOM = 24;
+
+// A circle's radius from its feature state, or 0 before its first style is set
+const STYLE_RADIUS = ['coalesce', ['feature-state', 'radius'], 0];
 
 // MapLibre paint for the station circles. MapLibre sizes circles in pixels, so
 // each zoom level gets its own metres-to-pixels factor (doubling per level), and
@@ -190,13 +219,13 @@ export function stationCirclePaint(): CircleLayerSpecification['paint'] {
         stops.push(zoom, [
             'max',
             RADIUS_MIN_PIXELS,
-            ['*', ['get', 'radius'], 2 ** zoom / metersPerPixelZ0]
+            ['*', STYLE_RADIUS, 2 ** zoom / metersPerPixelZ0]
         ]);
     }
 
     return {
         'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], ...stops],
-        'circle-color': ['get', 'color'],
+        'circle-color': ['coalesce', ['feature-state', 'color'], 'rgba(0, 0, 0, 0)'],
         'circle-stroke-color': `rgba(${OUTLINE_COLOR.slice(0, 3).join(', ')}, ${(
             OUTLINE_COLOR[3] / 255
         ).toFixed(2)})`,

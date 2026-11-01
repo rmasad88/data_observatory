@@ -14,7 +14,8 @@ import {
     createStationLayer,
     stationCirclePaint,
     stationColor,
-    stationFeatures,
+    stationPoints,
+    stationStyles,
     stationRadius
 } from './layer';
 
@@ -48,14 +49,16 @@ function makeData(): HeartbeatData {
 
 describe('activityAt', () => {
     it('averages a bin with its neighbours', () => {
-        // (3 + 6 + 9) / 3
+        // Default 50-minute window: (0 + 3 + 6 + 9 + 12) / 5
         expect(activityAt(makeData(), 0, 2)).toEqual({ departures: 6, arrivals: 0 });
+        // 30-minute window: (3 + 6 + 9) / 3
+        expect(activityAt(makeData(), 0, 2, 1)).toEqual({ departures: 6, arrivals: 0 });
     });
 
     it('averages only the bins that exist at the edges', () => {
-        // First bin: (0 + 3) / 2; last bin: (9 + 12) / 2
-        expect(activityAt(makeData(), 0, 0).departures).toBe(1.5);
-        expect(activityAt(makeData(), 0, 4).departures).toBe(10.5);
+        // With a 30-minute window. First bin: (0 + 3) / 2; last: (9 + 12) / 2
+        expect(activityAt(makeData(), 0, 0, 1).departures).toBe(1.5);
+        expect(activityAt(makeData(), 0, 4, 1).departures).toBe(10.5);
     });
 
     it('returns the raw counts without smoothing', () => {
@@ -124,19 +127,27 @@ describe('createStationLayer', () => {
     });
 });
 
-describe('stationFeatures', () => {
+describe('stationPoints', () => {
+    it('gives each station a point whose id is its index', () => {
+        const { features } = stationPoints(makeData());
+
+        expect(features.map((feature) => feature.id)).toEqual([0, 1]);
+        expect(features[1].geometry.coordinates).toEqual([-0.2, 51.6]);
+    });
+});
+
+describe('stationStyles', () => {
     it('matches the deck.gl layer for every station', () => {
         const data = makeData();
-        const { features } = stationFeatures(data, 2);
+        const styles = stationStyles(data, 2.5);
+        const activity = activityAtPosition(data, 0, 2.5);
+        const [r, g, b, a] = stationColor(activity);
 
-        expect(features).toHaveLength(2);
-        expect(features[1].geometry.coordinates).toEqual([-0.2, 51.6]);
-        expect(features[0].properties.radius).toBe(stationRadius(activityAt(data, 0, 2)));
-
-        const [r, g, b, a] = stationColor(activityAt(data, 0, 2));
-        expect(features[0].properties.color).toBe(
-            `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`
-        );
+        expect(styles).toHaveLength(2);
+        expect(styles[0]).toEqual({
+            radius: stationRadius(activity),
+            color: `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`
+        });
     });
 });
 
@@ -153,6 +164,13 @@ describe('stationCirclePaint', () => {
         // At zoom 13 and London's latitude a pixel is about 5.97 m, so a 100 m
         // radius is about 16.8 pixels
         expect(100 * pixelsPerMetre).toBeCloseTo(16.8, 1);
+    });
+
+    it('reads size and colour from feature state', () => {
+        const paint = stationCirclePaint() as Record<string, unknown>;
+
+        expect(JSON.stringify(paint['circle-radius'])).toContain('"feature-state","radius"');
+        expect(JSON.stringify(paint['circle-color'])).toContain('"feature-state","color"');
     });
 
     it('keeps a minimum dot size when zoomed out', () => {
@@ -179,27 +197,57 @@ describe('binPositionAt', () => {
     });
 });
 
+// One station over eight bins with a single spike in the middle
+function makeSpikeData(): HeartbeatData {
+    const data = makeData();
+    return {
+        ...data,
+        binCount: 8,
+        stations: [data.stations[0]],
+        departures: new Uint16Array([0, 0, 0, 0, 40, 0, 0, 0]),
+        arrivals: new Uint16Array(8)
+    };
+}
+
 describe('activityAtPosition', () => {
-    it('blends the two nearest bins in proportion', () => {
-        const data = makeData();
-        // A quarter of the way from bin 1 (smoothed 3) to bin 2 (smoothed 6)
-        const blended = activityAtPosition(data, 0, 1.25);
-
-        expect(blended.departures).toBeCloseTo(3 + 0.25 * (6 - 3));
-    });
-
-    it('matches activityAt exactly on a bin', () => {
+    it('passes exactly through the bin values', () => {
         const data = makeData();
 
         expect(activityAtPosition(data, 0, 3)).toEqual(activityAt(data, 0, 3));
     });
 
-    it('blends from the last bin into the first so the loop is seamless', () => {
+    it('follows a straight line where the bins do', () => {
         const data = makeData();
-        const halfway = activityAtPosition(data, 0, 4.5);
-        const last = activityAt(data, 0, 4).departures;
-        const first = activityAt(data, 0, 0).departures;
+        // Smoothed bins 0 to 3 are 3, 4.5, 6, 7.5: a quarter from bin 1 to 2
+        expect(activityAtPosition(data, 0, 1.25).departures).toBeCloseTo(4.875);
+    });
 
-        expect(halfway.departures).toBeCloseTo((last + first) / 2);
+    it('has no kink at a bin: the slope is the same either side', () => {
+        const data = makeSpikeData();
+        const at = (position: number) => activityAtPosition(data, 0, position).departures;
+        const step = 1e-4;
+        // Bin 2 is where the smoothed spike levels off (bins 1, 2, 3 = 0, 8, 8),
+        // so straight-line blending would turn sharply here: slope 8, then 0
+        const slopeBefore = (at(2) - at(2 - step)) / step;
+        const slopeAfter = (at(2 + step) - at(2)) / step;
+
+        expect(slopeAfter).toBeCloseTo(slopeBefore, 1);
+    });
+
+    it('never goes below zero beside a spike', () => {
+        const data = makeSpikeData();
+
+        for (let position = 0; position < 8; position += 0.05) {
+            expect(activityAtPosition(data, 0, position).departures).toBeGreaterThanOrEqual(0);
+        }
+    });
+
+    it('runs from the last bin into the first without a jump', () => {
+        const data = makeData();
+
+        expect(activityAtPosition(data, 0, 4.9999).departures).toBeCloseTo(
+            activityAt(data, 0, 0).departures,
+            2
+        );
     });
 });

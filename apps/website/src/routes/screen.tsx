@@ -2,14 +2,14 @@ import { WebMercatorViewport } from '@deck.gl/core';
 import DeckGL from '@deck.gl/react';
 import { createFileRoute, useLocation } from '@tanstack/react-router';
 import { Map, type MapRef } from '@vis.gl/react-maplibre';
-import type { GeoJSONSource } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
     binPositionAt,
     createStationLayer,
     stationCirclePaint,
-    stationFeatures
+    stationPoints,
+    stationStyles
 } from '../lib/heartbeat/layer';
 import { INITIAL_POSITION_MINUTES, playbackMinutes, wrapMinutes } from '../lib/playback';
 import { screenEngine } from '../lib/realtime/engines/screen-engine';
@@ -32,9 +32,9 @@ const WALL: WallSize = {
 // Shared animation timings so transitions feel identical across all screen nodes.
 const MAP_TRANSITION_DURATION_MS = 1200;
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-// The fallback renderer rebuilds its GeoJSON on each update, which is heavier
-// than deck.gl's redraw, so while playing it updates at most 15 times a second
-const FALLBACK_MIN_UPDATE_MS = 1000 / 15;
+// While playing, the fallback renderer restyles its circles at most 30 times a
+// second: smooth to the eye, with headroom when several iframes share a machine
+const FALLBACK_MIN_UPDATE_MS = 1000 / 30;
 // Fallback renderer's MapLibre source and layer for the stations
 const STATIONS_SOURCE_ID = 'stations-source';
 const STATIONS_LAYER_ID = 'stations-layer';
@@ -83,6 +83,8 @@ function ScreenPage() {
     const [minutes, setMinutes] = useState(INITIAL_POSITION_MINUTES);
     const playbackFrameRef = useRef<number | null>(null);
     const lastFallbackUpdateRef = useRef(0);
+    // True once the fallback map has the stations' source and layer
+    const [fallbackReady, setFallbackReady] = useState(false);
     const [mapInstance, setMapInstance] = useState<ReturnType<MapRef['getMap']> | null>(null);
 
     const setMapRef = useCallback((instance: MapRef | null) => {
@@ -174,40 +176,50 @@ function ScreenPage() {
         [heartbeat, binPosition]
     );
 
+    // Fallback: add the stations' points and circle layer to the map once
     useEffect(() => {
         if (!isClient || useDeckWrapper || !mapInstance || !heartbeat) return;
+
+        const addStations = () => {
+            if (!mapInstance.isStyleLoaded()) return;
+            if (!mapInstance.getSource(STATIONS_SOURCE_ID)) {
+                mapInstance.addSource(STATIONS_SOURCE_ID, {
+                    type: 'geojson',
+                    data: stationPoints(heartbeat)
+                });
+                mapInstance.addLayer({
+                    id: STATIONS_LAYER_ID,
+                    type: 'circle',
+                    source: STATIONS_SOURCE_ID,
+                    paint: stationCirclePaint()
+                });
+            }
+            setFallbackReady(true);
+        };
+
+        addStations();
+        // If the map style was still loading, add the stations once it is ready
+        mapInstance.on('load', addStations);
+        return () => {
+            mapInstance.off('load', addStations);
+        };
+    }, [isClient, useDeckWrapper, mapInstance, heartbeat]);
+
+    // Fallback: restyle each station in place as playback moves. Setting feature
+    // state updates only the circles' values, with no geometry re-sent, so it is
+    // light enough to run many times a second.
+    useEffect(() => {
+        if (!fallbackReady || !mapInstance || !heartbeat) return;
 
         // While playing, skip updates that come sooner than the fallback's limit
         const now = performance.now();
         if (isPlaying && now - lastFallbackUpdateRef.current < FALLBACK_MIN_UPDATE_MS) return;
         lastFallbackUpdateRef.current = now;
-        const features = stationFeatures(heartbeat, binPosition);
 
-        // Create the source and layer once, then update the data in place
-        // rather than rebuilding layers (see BEST_PRACTICES on wall performance).
-        const syncStations = () => {
-            if (!mapInstance.isStyleLoaded()) return;
-            const source = mapInstance.getSource<GeoJSONSource>(STATIONS_SOURCE_ID);
-            if (source) {
-                source.setData(features);
-                return;
-            }
-            mapInstance.addSource(STATIONS_SOURCE_ID, { type: 'geojson', data: features });
-            mapInstance.addLayer({
-                id: STATIONS_LAYER_ID,
-                type: 'circle',
-                source: STATIONS_SOURCE_ID,
-                paint: stationCirclePaint()
-            });
-        };
-
-        syncStations();
-        // If the map style was still loading, add the stations once it is ready
-        mapInstance.on('load', syncStations);
-        return () => {
-            mapInstance.off('load', syncStations);
-        };
-    }, [isClient, useDeckWrapper, mapInstance, heartbeat, binPosition, isPlaying]);
+        stationStyles(heartbeat, binPosition).forEach((style, id) => {
+            mapInstance.setFeatureState({ source: STATIONS_SOURCE_ID, id }, style);
+        });
+    }, [fallbackReady, mapInstance, heartbeat, binPosition, isPlaying]);
 
     return (
         <main className="pointer-events-none h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
