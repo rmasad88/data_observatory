@@ -1,10 +1,18 @@
 """Tests for heartbeat_lib."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from heartbeat_lib import build_heartbeat, count_events
+from heartbeat_lib import (
+    EXPORT_DTYPE,
+    Heartbeat,
+    build_heartbeat,
+    count_events,
+    export_heartbeat,
+)
 
 DAY = pd.Timestamp("2024-07-01")
 BINS_PER_DAY = 24 * 6
@@ -198,3 +206,85 @@ def test_fortnight_morning_tide_drains_waterloo(heartbeat):
     ]
 
     assert np.sum(net) < 0
+
+
+# export_heartbeat -------------------------------------------------------
+
+
+@pytest.fixture
+def small_heartbeat():
+    """Two stations over three bins, with distinct counts."""
+    return Heartbeat(
+        stations=pd.DataFrame(
+            {
+                "terminal": ["000001", "000002"],
+                "name": ["Café Street, Somewhere", "Other Road, Elsewhere"],
+                "lat": [51.5000012, 51.51],
+                "lon": [-0.1234567, -0.12],
+                "docks": [20, 30],
+                "source": ["2024-08-20 snapshot", "current list"],
+            }
+        ),
+        bin_starts=pd.date_range("2024-07-01", periods=3, freq="10min"),
+        departures=np.array([[1, 2, 3], [4, 5, 6]]),
+        arrivals=np.array([[7, 8, 9], [10, 11, 12]]),
+    )
+
+
+def read_export(metadata_path, counts_path):
+    """Read exported files back the way the browser will."""
+    metadata = json.loads(metadata_path.read_text())
+    counts = np.fromfile(counts_path, dtype=EXPORT_DTYPE)
+    shape = metadata["counts"]["shape"]
+    departures, arrivals = counts.reshape(2, *shape)
+    return metadata, departures, arrivals
+
+
+def test_export_round_trip(tmp_path, small_heartbeat):
+    metadata, departures, arrivals = read_export(
+        *export_heartbeat(small_heartbeat, tmp_path)
+    )
+
+    np.testing.assert_array_equal(departures, small_heartbeat.departures)
+    np.testing.assert_array_equal(arrivals, small_heartbeat.arrivals)
+
+
+def test_export_metadata(tmp_path, small_heartbeat):
+    metadata_path, counts_path = export_heartbeat(small_heartbeat, tmp_path)
+    metadata = json.loads(metadata_path.read_text())
+
+    assert metadata["start"] == "2024-07-01T00:00:00"
+    assert metadata["binMinutes"] == 10
+    assert metadata["binCount"] == 3
+    assert metadata["stationCount"] == 2
+    first = metadata["stations"][0]
+    assert first["terminal"] == "000001"
+    # Non-ASCII names survive, coordinates are [lon, lat] rounded to ~1 m
+    assert first["name"] == "Café Street, Somewhere"
+    assert first["position"] == [-0.12346, 51.5]
+    assert first["source"] == "2024-08-20 snapshot"
+
+
+def test_export_file_size(tmp_path, small_heartbeat):
+    _, counts_path = export_heartbeat(small_heartbeat, tmp_path)
+
+    # 2 blocks x 2 stations x 3 bins x 2 bytes
+    assert counts_path.stat().st_size == 2 * 2 * 3 * 2
+
+
+def test_export_count_too_large_raises(tmp_path, small_heartbeat):
+    small_heartbeat.departures[0, 0] = np.iinfo(EXPORT_DTYPE).max + 1
+
+    with pytest.raises(ValueError, match="does not fit"):
+        export_heartbeat(small_heartbeat, tmp_path)
+    assert not any(tmp_path.iterdir())
+
+
+def test_export_real_fortnight_round_trip(tmp_path, heartbeat):
+    metadata, departures, arrivals = read_export(
+        *export_heartbeat(heartbeat, tmp_path)
+    )
+
+    assert len(metadata["stations"]) == len(heartbeat.stations)
+    np.testing.assert_array_equal(departures, heartbeat.departures)
+    np.testing.assert_array_equal(arrivals, heartbeat.arrivals)

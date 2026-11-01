@@ -9,14 +9,14 @@ An archived copy of the TfL BikePoint API response (`https://api.tfl.gov.uk/Bike
 as it was in August 2024. It lists the docking stations close to the time of the
 journey data we analyse (1–14 July 2024).
 
-| | |
-|---|---|
-| Source | Internet Archive Wayback Machine |
-| Capture | 2024-08-20 00:25:05 UTC |
+|              |                                                                                  |
+| ------------ | -------------------------------------------------------------------------------- |
+| Source       | Internet Archive Wayback Machine                                                 |
+| Capture      | 2024-08-20 00:25:05 UTC                                                          |
 | Archived URL | `https://web.archive.org/web/20240820002505id_/https://api.tfl.gov.uk/BikePoint` |
-| Stations | 794 |
-| Format | gzip-compressed JSON, exactly as served by the archive |
-| SHA-256 | `c9b2fd4295b47922fe05b05547f35a1a712ff8871cf1e8a21d3cdc71c1ecb2be` |
+| Stations     | 794                                                                              |
+| Format       | gzip-compressed JSON, exactly as served by the archive                           |
+| SHA-256      | `c9b2fd4295b47922fe05b05547f35a1a712ff8871cf1e8a21d3cdc71c1ecb2be`               |
 
 ### Why we use it instead of today's station list
 
