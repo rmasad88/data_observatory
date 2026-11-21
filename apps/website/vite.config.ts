@@ -6,7 +6,12 @@ import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { nitro } from 'nitro/vite';
 import { defineConfig } from 'vite-plus';
 
+// Where the site is served from: '/' by default (development, the wall), or a
+// sub-path such as '/data_observatory/' for GitHub Pages
+const basePath = process.env.BASE_PATH ?? '/';
+
 export default defineConfig({
+    base: basePath,
     resolve: {
         tsconfigPaths: true
     },
@@ -27,7 +32,16 @@ export default defineConfig({
         devtools({
             consolePiping: { enabled: false }
         }),
-        tanstackStart(),
+        tanstackStart({
+            // The public /explore page is also written out as static HTML, so it
+            // can be hosted without the server (the wall's routes still need it)
+            prerender: {
+                enabled: true,
+                crawlLinks: false,
+                filter: ({ path }) => path === '/explore'
+            },
+            pages: [{ path: '/explore' }]
+        }),
         // https://tanstack.com/start/latest/docs/framework/react/guide/hosting
         nitro({
             features: { websocket: true }

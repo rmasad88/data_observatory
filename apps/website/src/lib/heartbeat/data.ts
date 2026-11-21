@@ -1,7 +1,9 @@
 // Loads the station heartbeat produced by `analysis/build_heartbeat.py` (see the
 // README's "Generated data" section for the file format).
 
-const HEARTBEAT_DIR = '/data/heartbeat';
+// Under the site's base path, so the files are found when it is served from a
+// sub-path such as GitHub Pages
+const HEARTBEAT_DIR = `${import.meta.env.BASE_URL}data/heartbeat`;
 const METADATA_FILE = 'stations.json';
 const COUNTS_DTYPE = 'uint16-le';
 const COUNT_BLOCKS = ['departures', 'arrivals'];

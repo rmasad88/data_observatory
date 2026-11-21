@@ -1,0 +1,74 @@
+# Build the public /explore page as a static site and publish it on GitHub
+# Pages, at https://<owner>.github.io/<repository>/. Needs Pages enabled in the
+# repository's settings with "GitHub Actions" as the source.
+name: GitHub Pages
+
+on:
+    push:
+        branches: [main]
+    # Allows publishing by hand from the Actions tab
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one midway
+concurrency:
+    group: pages
+    cancel-in-progress: false
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Installs the pnpm version pinned in package.json's packageManager
+            - uses: pnpm/action-setup@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            # Pages serves the site from /<repository>/, so every path needs it
+            - name: Type-check and build
+              working-directory: apps/website
+              env:
+                  BASE_PATH: /${{ github.event.repository.name }}/
+              run: pnpm run build
+
+            # Only /explore works without the wall's server, so the site's root
+            # forwards visitors there
+            - name: Open the explore page from the site's root
+              run: |
+                  cat > apps/website/.output/public/index.html <<'HTML'
+                  <!doctype html>
+                  <meta charset="utf-8">
+                  <title>London cycling heartbeat</title>
+                  <meta http-equiv="refresh" content="0; url=explore/">
+                  <a href="explore/">London cycling heartbeat</a>
+                  HTML
+
+            - uses: actions/configure-pages@v5
+
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: apps/website/.output/public
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+
+        steps:
+            - id: deployment
+              uses: actions/deploy-pages@v4

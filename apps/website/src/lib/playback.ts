@@ -21,6 +21,13 @@ export type PlaybackCommand = Partial<Pick<PlaybackState, 'playing' | 'positionM
 
 // One simulated day per real minute
 export const DEFAULT_SPEED = 24;
+// Speeds a viewer can pick, in simulated minutes per real second
+export const SPEED_PRESETS = [
+    { label: '½ day/min', speed: 12 },
+    { label: '1 day/min', speed: 24 },
+    { label: '2 days/min', speed: 48 },
+    { label: '5 days/min', speed: 120 }
+];
 // Fastest allowed: one simulated day every 6 seconds
 export const MAX_SPEED = 240;
 

@@ -5,6 +5,7 @@ import { Map, type MapRef } from '@vis.gl/react-maplibre';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { WallLabels } from '../components/wall-labels';
+import { MAP_STYLE } from '../lib/basemap';
 import {
     binPositionAt,
     createStationLayer,
@@ -29,7 +30,6 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Shared animation timings so transitions feel identical across all screen nodes.
 const MAP_TRANSITION_DURATION_MS = 1200;
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 // While playing, the fallback renderer restyles its circles at most 30 times a
 // second: smooth to the eye, with headroom when several iframes share a machine
 const FALLBACK_MIN_UPDATE_MS = 1000 / 30;
