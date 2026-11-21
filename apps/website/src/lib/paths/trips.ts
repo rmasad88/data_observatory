@@ -8,12 +8,27 @@ import type { RGB } from '../heartbeat/layer';
 import type { PathDay } from './data';
 
 // How much of each ride's recent path is visible behind it, in simulated
-// minutes
-export const TRAIL_MINUTES = 8;
-// Faint warm white: reads as movement without competing with the red and blue
-// of the stations
-export const TRAIL_COLOR: RGB = [255, 226, 190];
-const TRAIL_OPACITY = 0.35;
+// minutes. The trail fades evenly to nothing over this length, so a shorter
+// trail also fades faster.
+export const TRAIL_MINUTES = 3;
+export const TRAIL_COLOR: RGB = [255, 255, 255];
+// Faint on its own: trails add their light together (see TRAIL_BLENDING), so
+// a lone ride is a dim streak and a street carrying many at once glows white
+const TRAIL_OPACITY = 0.3;
+// Additive blending: each trail's colour is added to what is already drawn,
+// so overlapping trails build up brightness instead of hiding one another.
+// Depth is ignored, so trails at the same place all count.
+export const TRAIL_BLENDING = {
+    blend: true,
+    blendColorOperation: 'add',
+    blendColorSrcFactor: 'src-alpha',
+    blendColorDstFactor: 'one',
+    blendAlphaOperation: 'add',
+    blendAlphaSrcFactor: 'one',
+    blendAlphaDstFactor: 'one-minus-src-alpha',
+    depthWriteEnabled: false,
+    depthCompare: 'always'
+} as const;
 // Metres, so trails scale with the map like the dots, but never thinner than
 // a pixel
 const TRAIL_WIDTH_METERS = 8;
@@ -105,6 +120,7 @@ export function createTripsLayer(dayTrips: DayTrips, minutes: number, timeShift 
         jointRounded: true,
         fadeTrail: true,
         trailLength: TRAIL_MINUTES,
+        parameters: TRAIL_BLENDING,
         currentTime: minutes + timeShift
     });
 }

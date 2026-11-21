@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
 
 import type { PathDay } from './data';
-import { buildDayTrips, createTripsLayer, routeProgress, TRAIL_MINUTES } from './trips';
+import {
+    buildDayTrips,
+    createTripsLayer,
+    routeProgress,
+    TRAIL_BLENDING,
+    TRAIL_MINUTES
+} from './trips';
 
 // Two routes: an L shape (east 2 units, then north 1) and a single step north.
 // Near the equator so degrees of longitude and latitude are the same length.
@@ -68,6 +74,8 @@ describe('createTripsLayer', () => {
         expect(layer.id).toBe('trips-2024-07-01');
         expect(layer.props.currentTime).toBe(20_660);
         expect(layer.props.trailLength).toBe(TRAIL_MINUTES);
+        // Overlapping trails add up, so busy streets stand out
+        expect(layer.props.parameters).toBe(TRAIL_BLENDING);
         expect(layer.props.data).toBe(dayTrips.trips);
     });
 });
