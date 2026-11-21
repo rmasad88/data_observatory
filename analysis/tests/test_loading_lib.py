@@ -235,9 +235,13 @@ def test_stations_columns(stations):
     assert list(stations.columns) == STATION_COLUMNS
 
 
-def test_stations_terminals_unique_six_chars(stations):
+def test_stations_terminals_unique_and_well_formed(stations):
     assert stations["terminal"].is_unique
-    assert (stations["terminal"].str.len() == 6).all()
+    # Six digits, as in the journey files. Since November 2026 TfL's live
+    # feed gives a few old stations a "STAT-" id instead, e.g. STAT-0093 for
+    # Cloudesley Road (002586 in the journeys)
+    pattern = r"\d{6}|STAT-\d{4}"
+    assert stations["terminal"].str.fullmatch(pattern).all()
 
 
 def test_stations_inside_greater_london(stations):
