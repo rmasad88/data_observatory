@@ -4,6 +4,7 @@
 import { ScatterplotLayer } from '@deck.gl/layers';
 import type { CircleLayerSpecification } from 'maplibre-gl';
 
+import { NO_SELECTION, UNSELECTED_DIMMING, type Selection } from '../station-selection';
 import { countIndex, type HeartbeatData, type HeartbeatStation } from './data';
 
 export type RGB = [number, number, number];
@@ -22,6 +23,8 @@ export const COLOR_GAINING: RGB = [57, 135, 229];
 export const COLOR_BALANCED: RGB = [138, 138, 133];
 // A thin ring in the map's background colour keeps overlapping dots distinct
 const OUTLINE_COLOR: RGBA = [14, 14, 14, 200];
+const SELECTED_OUTLINE_COLOR: RGBA = [255, 255, 255, 255];
+const SELECTED_OUTLINE_PIXELS = 2;
 
 // Activity is a Gaussian-weighted average of nearby bins with this standard
 // deviation, so dots follow the hourly trend rather than 10-minute noise. Each
@@ -141,16 +144,26 @@ export function stationColor({ departures, arrivals }: StationActivity): RGBA {
 }
 
 // The deck.gl layer drawing every station at a (fractional) bin position
-export function createStationLayer(data: HeartbeatData, binPosition: number) {
+// While stations are selected, the others are dimmed and the selected ones
+// outlined in white
+export function createStationLayer(
+    data: HeartbeatData,
+    binPosition: number,
+    selection: Selection = NO_SELECTION
+) {
     // Work out each station's activity once, rather than in both accessors
     const activities = activitiesAtPosition(data, binPosition);
+    const selecting = selection.size > 0;
 
     return new ScatterplotLayer<HeartbeatStation>({
         id: 'stations',
         data: data.stations,
         getPosition: (station) => station.position,
         getRadius: (_, { index }) => stationRadius(activities[index]),
-        getFillColor: (_, { index }) => stationColor(activities[index]),
+        getFillColor: (_, { index }) => {
+            const color = stationColor(activities[index]);
+            return selecting && !selection.has(index) ? dimmed(color) : color;
+        },
         radiusUnits: 'meters',
         // Keep every station visible as at least a small dot when zoomed out
         radiusMinPixels: RADIUS_MIN_PIXELS,
@@ -158,15 +171,28 @@ export function createStationLayer(data: HeartbeatData, binPosition: number) {
         // movement triggers picking, so the wall's screens pay nothing for it.
         pickable: true,
         stroked: true,
-        getLineColor: OUTLINE_COLOR,
+        getLineColor: (_, { index }) =>
+            selection.has(index)
+                ? SELECTED_OUTLINE_COLOR
+                : selecting
+                  ? dimmed(OUTLINE_COLOR)
+                  : OUTLINE_COLOR,
         lineWidthUnits: 'pixels',
-        getLineWidth: 1,
-        // Recalculate sizes and colours only when the position changes
+        getLineWidth: (_, { index }) => (selection.has(index) ? SELECTED_OUTLINE_PIXELS : 1),
+        // Recalculate sizes and colours only when the position or the
+        // selection changes
         updateTriggers: {
             getRadius: binPosition,
-            getFillColor: binPosition
+            getFillColor: [binPosition, selection],
+            getLineColor: selection,
+            getLineWidth: selection
         }
     });
+}
+
+// A colour at the opacity unselected stations get during a selection
+export function dimmed([r, g, b, a]: RGBA): RGBA {
+    return [r, g, b, Math.round(a * UNSELECTED_DIMMING)];
 }
 
 // --- Iframe-safe fallback: the same picture drawn with MapLibre's circle layer ---

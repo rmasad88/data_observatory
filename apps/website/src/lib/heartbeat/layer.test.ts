@@ -16,7 +16,9 @@ import {
     stationColor,
     stationPoints,
     stationStyles,
-    stationRadius
+    stationRadius,
+    dimmed,
+    type RGBA
 } from './layer';
 
 // Two stations over five bins. Station 0 has departures 0, 3, 6, 9, 12 and no
@@ -106,6 +108,29 @@ describe('createStationLayer', () => {
         expect(getFillColor(null, { index: 1 })).toEqual(
             stationColor(activityAtPosition(data, 1, 2))
         );
+    });
+
+    it('dims the stations left out of a selection and outlines the rest', () => {
+        const data = makeData();
+        const layer = createStationLayer(data, 2, new Set([0]));
+        const { getFillColor, getLineWidth } = layer.props as unknown as {
+            getFillColor: (d: unknown, info: { index: number }) => RGBA;
+            getLineWidth: (d: unknown, info: { index: number }) => number;
+        };
+
+        expect(getFillColor(null, { index: 0 })).toEqual(
+            stationColor(activityAtPosition(data, 0, 2))
+        );
+        expect(getFillColor(null, { index: 1 })).toEqual(
+            dimmed(stationColor(activityAtPosition(data, 1, 2)))
+        );
+        expect(getLineWidth(null, { index: 0 })).toBeGreaterThan(getLineWidth(null, { index: 1 }));
+    });
+});
+
+describe('dimmed', () => {
+    it('keeps the colour and lowers the opacity', () => {
+        expect(dimmed([200, 100, 50, 250])).toEqual([200, 100, 50, 50]);
     });
 });
 

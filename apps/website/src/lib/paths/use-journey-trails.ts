@@ -1,17 +1,35 @@
 // React glue for the journey trails: loads the paths index once trails are
 // first switched on, keeps the days around the moment shown in a
-// PathDayCache, and gives back a trail layer per loaded day.
+// PathDayCache, and gives back a trail layer per loaded day, limited to a
+// selection of stations if one is given.
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { NO_SELECTION, selectionInPaths, type Selection } from '../station-selection';
 import { loadPathDay, loadPathsIndex, type PathsIndex } from './data';
 import { MINUTES_PER_DAY, PathDayCache, wantedDays } from './day-cache';
-import { buildDayTrips, createTripsLayer } from './trips';
+import { buildDayTrips, createTripsLayer, filterTrips } from './trips';
+
+export type TrailFilter = {
+    // Stations (positions in the heartbeat's list) whose journeys to show;
+    // empty for every journey
+    selection: Selection;
+    // The heartbeat's terminal for each station, to match them to the paths
+    stationTerminals: string[];
+};
+
+const NO_FILTER: TrailFilter = { selection: NO_SELECTION, stationTerminals: [] };
 
 // `minutes` is the time shown (since the data's start, within the period) and
 // `start` the heartbeat's start, which the paths must share for their times to
-// line up. Nothing is loaded while `enabled` is false.
-export function useJourneyTrails(enabled: boolean, start: string | undefined, minutes: number) {
+// line up. Nothing is loaded while `enabled` is false. Keep `filter` the same
+// object between renders unless it changes: a new one rebuilds the trails.
+export function useJourneyTrails(
+    enabled: boolean,
+    start: string | undefined,
+    minutes: number,
+    filter: TrailFilter = NO_FILTER
+) {
     const [index, setIndex] = useState<PathsIndex | null>(null);
     const [cache, setCache] = useState<PathDayCache | null>(null);
     // Bumped whenever a day arrives, so the layers are rebuilt
@@ -61,12 +79,24 @@ export function useJourneyTrails(enabled: boolean, start: string | undefined, mi
         if (enabled && cache) cache.want(wanted.map((entry) => entry.day));
     }, [enabled, cache, wanted]);
 
-    return useMemo(() => {
-        if (!enabled || !cache) return [];
+    // The days' trips, filtered to the selection: only redone when a day
+    // arrives or the selection changes, not every frame
+    const shown = useMemo(() => {
+        if (!enabled || !cache || !index) return [];
+        const stations =
+            filter.selection.size > 0
+                ? selectionInPaths(filter.selection, filter.stationTerminals, index.terminals)
+                : null;
         return wanted.flatMap(({ day: wantedDay, timeShift }) => {
             const trips = cache.get(wantedDay);
-            return trips ? [createTripsLayer(trips, minutes, timeShift)] : [];
+            if (!trips) return [];
+            return [{ trips: stations ? filterTrips(trips, stations) : trips, timeShift }];
         });
         // `version` stands for the cache's contents changing
-    }, [enabled, cache, wanted, minutes, version]);
+    }, [enabled, cache, index, wanted, filter, version]);
+
+    return useMemo(
+        () => shown.map(({ trips, timeShift }) => createTripsLayer(trips, minutes, timeShift)),
+        [shown, minutes]
+    );
 }

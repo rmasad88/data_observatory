@@ -13,6 +13,7 @@ from paths_lib import (
     encode_day,
     export_path_days,
     path_bounds,
+    path_terminals,
     quantise,
 )
 
@@ -56,6 +57,7 @@ def test_build_path_days_sorts_journeys_and_stores_each_route_once():
 
     # Sorted by start: 08:00 A to B, then 08:30 B to A
     assert first.routes == [ROUTES[("A", "B")], ROUTES[("B", "A")]]
+    assert first.route_pairs == [("A", "B"), ("B", "A")]
     assert list(first.journey_route) == [0, 1]
     assert list(first.journey_start) == [8 * 3600, 8.5 * 3600]
     assert list(first.journey_duration) == [900, 600]
@@ -93,19 +95,29 @@ def test_path_bounds_cover_every_point():
     assert south < 51.50 and north > 51.505
 
 
+def test_path_terminals_lists_each_route_end_once():
+    days, _ = build_path_days(make_journeys(), ROUTES, PERIOD_START)
+
+    # C has no route, so it isn't listed
+    assert path_terminals(days) == ["A", "B"]
+
+
 def test_encode_day_lays_out_arrays_in_order():
     day = build_path_days(make_journeys(), ROUTES, PERIOD_START)[0][0]
     bounds = (-0.2, 51.4, 0.0, 51.6)
 
-    data = encode_day(day, bounds)
+    # B is listed first, so the routes' stations are A=1, B=0
+    data = encode_day(day, bounds, ["B", "A"])
 
     offsets = np.frombuffer(data, "<u4", count=3)
     journeys = np.frombuffer(data, "<u4", count=4, offset=12)
     durations = np.frombuffer(data, "<u2", count=2, offset=28)
-    points = np.frombuffer(data, "<u2", offset=32).reshape(-1, 2)
+    stations = np.frombuffer(data, "<u2", count=4, offset=32)
+    points = np.frombuffer(data, "<u2", offset=40).reshape(-1, 2)
     assert offsets.tolist() == [0, 3, 5]
     assert journeys.tolist() == [0, 1, 8 * 3600, int(8.5 * 3600)]
     assert durations.tolist() == [900, 600]
+    assert stations.tolist() == [1, 0, 0, 1]
     np.testing.assert_allclose(
         dequantise(points, bounds)[:3], ROUTES[("A", "B")], atol=2e-6
     )
@@ -116,7 +128,7 @@ def test_encode_day_refuses_durations_too_long_to_store():
     day.journey_duration = np.array([70_000, 600])
 
     with pytest.raises(OverflowError):
-        encode_day(day, (-0.2, 51.4, 0.0, 51.6))
+        encode_day(day, (-0.2, 51.4, 0.0, 51.6), ["A", "B"])
 
 
 def test_export_path_days_writes_an_index_and_a_file_per_day(tmp_path):
@@ -131,6 +143,7 @@ def test_export_path_days_writes_an_index_and_a_file_per_day(tmp_path):
         "2024-07-02.bin",
     ]
     assert index["start"] == "2024-07-01T00:00:00"
+    assert index["terminals"] == ["A", "B"]
     assert index["days"][0] == {
         "date": "2024-07-01",
         "file": "2024-07-01.bin",
@@ -138,7 +151,7 @@ def test_export_path_days_writes_an_index_and_a_file_per_day(tmp_path):
         "points": 5,
         "journeys": 2,
     }
-    # 3 offsets, 2 routes and 2 starts as uint32; 2 durations and 5 points
-    # (x and y) as uint16
+    # 3 offsets, 2 routes and 2 starts as uint32; 2 durations, 2 routes'
+    # start and end stations and 5 points (x and y) as uint16
     size = (tmp_path / "2024-07-01.bin").stat().st_size
-    assert size == 7 * 4 + 2 * 2 + 10 * 2
+    assert size == 7 * 4 + 2 * 2 + 2 * 2 * 2 + 10 * 2

@@ -104,7 +104,8 @@ its real start time and duration.
 
 The output is one file per day in `apps/website/public/data/paths/`, listed by
 `paths.json`, which also gives the layout: route point offsets, each journey's
-route, start (seconds since 1 July 00:00) and duration, then the route points
+route, start (seconds since 1 July 00:00) and duration, each route's start and
+end station (positions in the index's `terminals` list), then the route points
 as 16-bit steps across the bounding box in `bounds`.
 
 ## Runtime Context Note (Top-Level vs Iframe)

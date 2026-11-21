@@ -9,6 +9,7 @@
 
 import { TextLayer } from '@deck.gl/layers';
 
+import { NO_SELECTION, UNSELECTED_DIMMING, type Selection } from '../station-selection';
 import type { HeartbeatData } from './data';
 import { COLOR_GAINING, COLOR_LOSING, SMOOTHING_SIGMA_MINUTES, smoothingWeights } from './layer';
 
@@ -168,8 +169,11 @@ export function createFlowSymbolLayer(
     data: HeartbeatData,
     schedule: FlowSchedule,
     minutes: number,
-    speed: number
+    speed: number,
+    // While stations are selected, the others' symbols are dimmed with them
+    selection: Selection = NO_SELECTION
 ) {
+    const selecting = selection.size > 0;
     return new TextLayer<FlowSymbol>({
         id: 'flow-symbols',
         data: flowSymbolsAt(data, schedule, minutes, speed),
@@ -180,13 +184,14 @@ export function createFlowSymbolLayer(
         getPosition: (symbol) => symbolPosition(data, symbol),
         getColor: (symbol) => {
             const [r, g, b] = symbol.direction > 0 ? COLOR_GAINING : COLOR_LOSING;
-            return [r, g, b, Math.round(255 * symbolOpacity(symbol.age))];
+            const dimming = selecting && !selection.has(symbol.station) ? UNSELECTED_DIMMING : 1;
+            return [r, g, b, Math.round(255 * symbolOpacity(symbol.age) * dimming)];
         },
         getSize: SYMBOL_SIZE_METERS,
         sizeUnits: 'meters',
         sizeMinPixels: SYMBOL_MIN_PIXELS,
         // Every symbol moves each frame
-        updateTriggers: { getPosition: minutes, getColor: minutes }
+        updateTriggers: { getPosition: minutes, getColor: [minutes, selection] }
     });
 }
 

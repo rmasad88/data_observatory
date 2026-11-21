@@ -19,6 +19,7 @@ const INDEX: PathsIndex = {
     start: '2024-07-01T00:00:00',
     bounds: [-0.2, 51.4, 0.0, 51.6],
     coordinateSteps: 4,
+    terminals: ['001023', '001018'],
     days: [{ date: '2024-07-01', file: '2024-07-01.bin', routes: 2, points: 5, journeys: 2 }]
 };
 
@@ -29,6 +30,8 @@ function makeDayBytes(): ArrayBuffer {
         new Uint32Array([1, 0]),
         new Uint32Array([28_800, 30_600]),
         new Uint16Array([600, 900]),
+        // The first route runs from the second terminal to the first
+        new Uint16Array([1, 0, 0, 1]),
         new Uint16Array([0, 0, 2, 2, 4, 4, 4, 0, 0, 4])
     ];
     const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
@@ -49,6 +52,7 @@ describe('parsePathsIndex', () => {
         ['not an object', 'paths'],
         ['no days', { ...INDEX, days: [] }],
         ['bad bounds', { ...INDEX, bounds: [0, 1] }],
+        ['no terminals', { ...INDEX, terminals: undefined }],
         ['a malformed day', { ...INDEX, days: [{ date: '2024-07-01' }] }]
     ])('rejects %s', (_label, value) => {
         expect(() => parsePathsIndex(value)).toThrow();
@@ -63,6 +67,7 @@ describe('parsePathDay', () => {
         expect(Array.from(day.journeyRoute)).toEqual([1, 0]);
         expect(Array.from(day.journeyStart)).toEqual([28_800, 30_600]);
         expect(Array.from(day.journeyDuration)).toEqual([600, 900]);
+        expect(Array.from(day.routeStations)).toEqual([1, 0, 0, 1]);
         expect(day.positions).toHaveLength(10);
     });
 
@@ -142,6 +147,19 @@ describe('generated path files', () => {
 
         // Matches the Python pipeline: 357,228 journeys less 10,889 round trips
         expect(total).toBe(346_339);
+    });
+
+    it('only joins stations the heartbeat knows', () => {
+        const heartbeatDir = fileURLToPath(
+            new URL('../../../public/data/heartbeat/', import.meta.url)
+        );
+        const heartbeat = JSON.parse(readFileSync(`${heartbeatDir}stations.json`, 'utf8')) as {
+            stations: { terminal: string }[];
+        };
+        const known = new Set(heartbeat.stations.map((station) => station.terminal));
+
+        expect(index.terminals.filter((terminal) => !known.has(terminal))).toEqual([]);
+        expect(Math.max(...readDay(0).routeStations)).toBeLessThan(index.terminals.length);
     });
 
     it('parses a day, with journeys in start order inside that day', () => {
