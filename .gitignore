@@ -33,3 +33,6 @@ analysis/data/
 # Python caches
 __pycache__/
 .pytest_cache/
+
+# Static build output (pnpm build)
+.output
