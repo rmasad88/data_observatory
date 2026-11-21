@@ -19,8 +19,8 @@ export type PlaybackState = {
 // A change requested by an operator; omitted fields keep their current value
 export type PlaybackCommand = Partial<Pick<PlaybackState, 'playing' | 'positionMinutes' | 'speed'>>;
 
-// One simulated day per real minute
-export const DEFAULT_SPEED = 24;
+// Half a simulated day per real minute: slow enough to follow single rides
+export const DEFAULT_SPEED = 12;
 // Speeds a viewer can pick, in simulated minutes per real second
 export const SPEED_PRESETS = [
     { label: '¼ day/min', speed: 6 },
