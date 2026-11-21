@@ -8,7 +8,7 @@ export const NO_SELECTION: Selection = new Set();
 
 // How bright unselected stations and their symbols are while a selection is
 // active, as a share of their usual opacity
-export const UNSELECTED_DIMMING = 0.2;
+export const UNSELECTED_DIMMING = 0.35;
 
 // A plain click: select just that station, or clear the selection if it is
 // already the only one selected
