@@ -19,6 +19,17 @@ Start the development server (`vp run dev`), then open:
   simulator's 3 × 2 is assumed.
 - `/screen?cols=1&rows=1`: the whole picture on one screen
 
+## Web version
+
+`/explore` is a single-screen version for the web: the whole map in the
+browser window, with play/pause, speed, a timeline across the fortnight, and a
+tooltip on each station. Unlike the wall's screens it needs no server, so the
+build also writes it out as a static page (`apps/website/.output/public`).
+
+The `GitHub Pages` workflow publishes it on every push to `main`, at
+`https://<owner>.github.io/<repository>/`. To build for another sub-path, set
+`BASE_PATH`, e.g. `BASE_PATH=/cycling/ pnpm run build` in `apps/website`.
+
 ## Analysis and data
 
 The visualisation data is produced by a Python pipeline in `analysis/`, from

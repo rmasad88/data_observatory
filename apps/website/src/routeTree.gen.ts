@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ScreenRouteImport } from './routes/screen'
 import { Route as NoopRouteImport } from './routes/noop'
+import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as ControlRouteImport } from './routes/control'
 import { Route as BusRouteImport } from './routes/bus'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,6 +24,11 @@ const ScreenRoute = ScreenRouteImport.update({
 const NoopRoute = NoopRouteImport.update({
   id: '/noop',
   path: '/noop',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ControlRoute = ControlRouteImport.update({
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bus': typeof BusRoute
   '/control': typeof ControlRoute
+  '/explore': typeof ExploreRoute
   '/noop': typeof NoopRoute
   '/screen': typeof ScreenRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bus': typeof BusRoute
   '/control': typeof ControlRoute
+  '/explore': typeof ExploreRoute
   '/noop': typeof NoopRoute
   '/screen': typeof ScreenRoute
 }
@@ -60,21 +68,23 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/bus': typeof BusRoute
   '/control': typeof ControlRoute
+  '/explore': typeof ExploreRoute
   '/noop': typeof NoopRoute
   '/screen': typeof ScreenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/bus' | '/control' | '/noop' | '/screen'
+  fullPaths: '/' | '/bus' | '/control' | '/explore' | '/noop' | '/screen'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/bus' | '/control' | '/noop' | '/screen'
-  id: '__root__' | '/' | '/bus' | '/control' | '/noop' | '/screen'
+  to: '/' | '/bus' | '/control' | '/explore' | '/noop' | '/screen'
+  id: '__root__' | '/' | '/bus' | '/control' | '/explore' | '/noop' | '/screen'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BusRoute: typeof BusRoute
   ControlRoute: typeof ControlRoute
+  ExploreRoute: typeof ExploreRoute
   NoopRoute: typeof NoopRoute
   ScreenRoute: typeof ScreenRoute
 }
@@ -93,6 +103,13 @@ declare module '@tanstack/react-router' {
       path: '/noop'
       fullPath: '/noop'
       preLoaderRoute: typeof NoopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/control': {
@@ -123,6 +140,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BusRoute: BusRoute,
   ControlRoute: ControlRoute,
+  ExploreRoute: ExploreRoute,
   NoopRoute: NoopRoute,
   ScreenRoute: ScreenRoute,
 }

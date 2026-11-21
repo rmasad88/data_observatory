@@ -154,6 +154,9 @@ export function createStationLayer(data: HeartbeatData, binPosition: number) {
         radiusUnits: 'meters',
         // Keep every station visible as at least a small dot when zoomed out
         radiusMinPixels: RADIUS_MIN_PIXELS,
+        // Lets a hovered station be identified for its tooltip. Only pointer
+        // movement triggers picking, so the wall's screens pay nothing for it.
+        pickable: true,
         stroked: true,
         getLineColor: OUTLINE_COLOR,
         lineWidthUnits: 'pixels',

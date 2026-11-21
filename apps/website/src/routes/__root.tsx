@@ -26,13 +26,15 @@ export const Route = createRootRouteWithContext()({
             {
                 name: 'description',
                 content:
-                    'Two weeks of London cycle hire journeys, played back across the Data Observatory wall'
+                    "Two weeks of London's cycle hire journeys, played back as a living map of the city's commuter tides"
             }
         ],
         links: [
             {
                 rel: 'icon',
-                href: '/favicon.ico'
+                type: 'image/svg+xml',
+                // Under the base path, for hosting on a sub-path such as GitHub Pages
+                href: `${import.meta.env.BASE_URL}favicon.svg`
             },
             { rel: 'stylesheet', href: appCss }
         ]

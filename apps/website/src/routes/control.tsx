@@ -2,17 +2,10 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
 import { Button } from '../components/button';
-import { formatDataTime, playbackMinutes, wrapMinutes } from '../lib/playback';
+import { formatDataTime, playbackMinutes, SPEED_PRESETS, wrapMinutes } from '../lib/playback';
 import { controlEngine } from '../lib/realtime/engines/control-engine';
 import { useControlStore } from '../lib/realtime/stores/control-store';
 
-// Speeds an operator can pick, in simulated minutes per real second
-const SPEED_PRESETS = [
-    { label: '½ day/min', speed: 12 },
-    { label: '1 day/min', speed: 24 },
-    { label: '2 days/min', speed: 48 },
-    { label: '5 days/min', speed: 120 }
-];
 // How often the time label refreshes; plenty for a clock showing minutes
 const CLOCK_REFRESH_MS = 100;
 
