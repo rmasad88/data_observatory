@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
+import { UNSELECTED_DIMMING } from '../station-selection';
 import type { HeartbeatData, HeartbeatStation } from './data';
 import {
     BIKES_PER_SYMBOL,
@@ -168,5 +169,17 @@ describe('createFlowSymbolLayer', () => {
 
         expect(getText({ station: 0, direction: 1, age: 0.5, jitter: 0 })).toBe('+');
         expect(getText({ station: 1, direction: -1, age: 0.5, jitter: 0 })).toBe('−');
+    });
+
+    it('dims the symbols of stations left out of a selection', () => {
+        const data = makeData();
+        const layer = createFlowSymbolLayer(data, buildFlowSchedule(data), 120, 24, new Set([0]));
+        const getColor = layer.props.getColor as unknown as (symbol: FlowSymbol) => number[];
+        const symbol = { direction: 1, age: 0.5, jitter: 0 };
+
+        const selected = getColor({ ...symbol, station: 0 })[3];
+        const other = getColor({ ...symbol, station: 1 })[3];
+
+        expect(other).toBe(Math.round(selected * UNSELECTED_DIMMING));
     });
 });

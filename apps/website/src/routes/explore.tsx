@@ -1,11 +1,13 @@
 import type { MapViewState } from '@deck.gl/core';
-import DeckGL from '@deck.gl/react';
+import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { createFileRoute } from '@tanstack/react-router';
 import { Map } from '@vis.gl/react-maplibre';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { BoxSelect } from '../components/box-select';
 import { ExploreControls } from '../components/explore-controls';
 import { ExploreOverlay } from '../components/explore-overlay';
+import { SelectionBadge } from '../components/selection-badge';
 import { MAP_STYLE } from '../lib/basemap';
 import {
     dayTicks,
@@ -27,6 +29,15 @@ import {
     type PlaybackCommand,
     type PlaybackState
 } from '../lib/playback';
+import {
+    addStationsInBox,
+    clickStation,
+    NO_SELECTION,
+    selectionLabel,
+    toggleStation,
+    type Box,
+    type Selection
+} from '../lib/station-selection';
 import { wallClock } from '../lib/wall-labels';
 import { fitPositionsToWall } from '../lib/wall-view';
 
@@ -57,6 +68,9 @@ function ExplorePage() {
     const [minutes, setMinutes] = useState(EXPLORE_START_MINUTES);
     // The camera; null until the data is loaded and the stations can be framed
     const [viewState, setViewState] = useState<MapViewState | null>(null);
+    // Stations whose journeys alone are shown; empty for all journeys
+    const [selection, setSelection] = useState<Selection>(NO_SELECTION);
+    const deckRef = useRef<DeckGLRef>(null);
     // The two optional layers, both on to begin with
     const [showJourneys, setShowJourneys] = useState(true);
     const [showSymbols, setShowSymbols] = useState(true);
@@ -106,7 +120,8 @@ function ExplorePage() {
         return () => cancelAnimationFrame(frame);
     }, [heartbeat, playback]);
 
-    // Keyboard: space plays or pauses, the arrow keys step an hour
+    // Keyboard: space plays or pauses, the arrow keys step an hour, Escape
+    // clears the selection
     useEffect(() => {
         if (!heartbeat) return;
 
@@ -125,6 +140,8 @@ function ExplorePage() {
                 event.preventDefault();
                 const hours = event.key === 'ArrowLeft' ? -1 : 1;
                 command({ positionMinutes: stepHours(heartbeat, now, hours) });
+            } else if (event.key === 'Escape') {
+                setSelection(NO_SELECTION);
             }
         };
         window.addEventListener('keydown', onKeyDown);
@@ -137,14 +154,44 @@ function ExplorePage() {
         () => (heartbeat ? buildFlowSchedule(heartbeat) : null),
         [heartbeat]
     );
-    const trailLayers = useJourneyTrails(showJourneys, heartbeat?.start, minutes);
+    // A Shift-drag adds the stations inside the box; a Shift-click adds or
+    // removes the station under the pointer
+    const selectBox = useCallback(
+        (box: Box) => {
+            // The viewport deck.gl is drawing, so pixels match the screen
+            const viewport = deckRef.current?.deck?.getViewports()[0];
+            if (!heartbeat || !viewport) return;
+            const positions = heartbeat.stations.map((station) => station.position);
+            const project = (position: [number, number]) =>
+                viewport.project(position) as [number, number];
+            setSelection((prev) => addStationsInBox(prev, positions, project, box));
+        },
+        [heartbeat]
+    );
+    const shiftClick = useCallback((x: number, y: number) => {
+        const picked = deckRef.current?.pickObject({ x, y, radius: 4, layerIds: ['stations'] });
+        if (picked && picked.index >= 0) {
+            setSelection((prev) => toggleStation(prev, picked.index));
+        }
+    }, []);
+
+    // Same object until the selection changes, so the trails are only
+    // re-filtered then
+    const trailFilter = useMemo(
+        () => ({
+            selection,
+            stationTerminals: heartbeat ? heartbeat.stations.map((station) => station.terminal) : []
+        }),
+        [selection, heartbeat]
+    );
+    const trailLayers = useJourneyTrails(showJourneys, heartbeat?.start, minutes, trailFilter);
     const layers = useMemo(
         () =>
             heartbeat && flowSchedule
                 ? [
                       // Under the dots, so the stations stay readable
                       ...trailLayers,
-                      createStationLayer(heartbeat, binPosition),
+                      createStationLayer(heartbeat, binPosition, selection),
                       // Above the dots
                       ...(showSymbols
                           ? [
@@ -152,13 +199,23 @@ function ExplorePage() {
                                     heartbeat,
                                     flowSchedule,
                                     minutes,
-                                    playback.speed
+                                    playback.speed,
+                                    selection
                                 )
                             ]
                           : [])
                   ]
                 : [],
-        [heartbeat, flowSchedule, trailLayers, binPosition, showSymbols, minutes, playback.speed]
+        [
+            heartbeat,
+            flowSchedule,
+            trailLayers,
+            binPosition,
+            selection,
+            showSymbols,
+            minutes,
+            playback.speed
+        ]
     );
     const ticks = useMemo(() => (heartbeat ? dayTicks(heartbeat) : []), [heartbeat]);
 
@@ -166,11 +223,20 @@ function ExplorePage() {
         <main className="relative h-dvh w-screen overflow-hidden bg-zinc-950 text-zinc-100">
             {heartbeat && viewState ? (
                 <DeckGL
+                    ref={deckRef}
                     viewState={viewState}
                     onViewStateChange={({ viewState: next }) => setViewState(next as MapViewState)}
                     // Pan and zoom only: tilting and rotating a flat map of dots adds nothing
                     controller={{ dragRotate: false, touchRotate: false }}
                     layers={layers}
+                    // A station picks just that station; empty map clears
+                    onClick={({ layer, index }) =>
+                        setSelection((prev) =>
+                            layer?.id === 'stations' && index >= 0
+                                ? clickStation(prev, index)
+                                : NO_SELECTION
+                        )
+                    }
                     getTooltip={({ index }) =>
                         index >= 0
                             ? {
@@ -194,7 +260,23 @@ function ExplorePage() {
                 </p>
             )}
 
+            {heartbeat && viewState ? <BoxSelect onBox={selectBox} onClick={shiftClick} /> : null}
+
             <ExploreOverlay clock={heartbeat ? wallClock(heartbeat.start, minutes) : undefined} />
+
+            {heartbeat ? (
+                <SelectionBadge
+                    label={
+                        selection.size > 0
+                            ? selectionLabel(
+                                  selection,
+                                  heartbeat.stations.map((station) => station.name)
+                              )
+                            : undefined
+                    }
+                    onClear={() => setSelection(NO_SELECTION)}
+                />
+            ) : null}
 
             {heartbeat ? (
                 <ExploreControls

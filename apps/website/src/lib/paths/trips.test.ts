@@ -4,6 +4,7 @@ import type { PathDay } from './data';
 import {
     buildDayTrips,
     createTripsLayer,
+    filterTrips,
     routeProgress,
     TRAIL_BLENDING,
     TRAIL_MINUTES
@@ -21,7 +22,9 @@ function makeDay(): PathDay {
         // 08:00, 08:30 and 09:00, in seconds
         journeyStart: new Uint32Array([28_800, 30_600, 32_400]),
         // 15, 6 and 30 minutes
-        journeyDuration: new Uint16Array([900, 360, 1800])
+        journeyDuration: new Uint16Array([900, 360, 1800]),
+        // The L route from station 0 to 1, the short one from 1 to 2
+        routeStations: new Uint16Array([0, 1, 1, 2])
     };
 }
 
@@ -60,8 +63,28 @@ describe('buildDayTrips', () => {
         );
     });
 
+    it("gives each trip its route's stations", () => {
+        expect(trips.map(({ from, to }) => [from, to])).toEqual([
+            [0, 1],
+            [1, 2],
+            [0, 1]
+        ]);
+    });
+
     it('shares route points between journeys rather than copying them', () => {
         expect(trips[0].path.buffer).toBe(trips[2].path.buffer);
+    });
+});
+
+describe('filterTrips', () => {
+    const dayTrips = buildDayTrips(makeDay());
+
+    it('keeps trips that start or end at a chosen station', () => {
+        // Station 2 is only the short route's end
+        expect(filterTrips(dayTrips, new Set([2])).trips).toEqual([dayTrips.trips[1]]);
+        // Station 1 is on both routes
+        expect(filterTrips(dayTrips, new Set([1])).trips).toHaveLength(3);
+        expect(filterTrips(dayTrips, new Set([7])).trips).toEqual([]);
     });
 });
 

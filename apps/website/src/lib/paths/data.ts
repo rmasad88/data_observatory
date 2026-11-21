@@ -22,6 +22,9 @@ export type PathsIndex = {
     bounds: [number, number, number, number];
     // Coordinates are stored as whole steps from 0 to this across the box
     coordinateSteps: number;
+    // The stations routes start and end at, by terminal; `routeStations`
+    // holds positions in this list
+    terminals: string[];
     days: PathsDayEntry[];
 };
 
@@ -38,11 +41,14 @@ export type PathDay = {
     journeyRoute: Uint32Array;
     journeyStart: Uint32Array;
     journeyDuration: Uint16Array;
+    // Each route's start and end station, as positions in the index's
+    // `terminals`: two entries per route
+    routeStations: Uint16Array;
 };
 
 export function parsePathsIndex(value: unknown): PathsIndex {
     if (!isRecord(value)) throw new Error('Paths index is not an object');
-    const { start, bounds, coordinateSteps, days } = value;
+    const { start, bounds, coordinateSteps, terminals, days } = value;
     if (typeof start !== 'string') throw new Error('Paths start is missing');
     if (
         !Array.isArray(bounds) ||
@@ -52,11 +58,15 @@ export function parsePathsIndex(value: unknown): PathsIndex {
         throw new Error('Paths bounds are invalid');
     }
     if (!isPositiveInteger(coordinateSteps)) throw new Error('Invalid coordinateSteps');
+    if (!Array.isArray(terminals) || !terminals.every((terminal) => typeof terminal === 'string')) {
+        throw new Error('Paths terminals are invalid');
+    }
     if (!Array.isArray(days) || days.length === 0) throw new Error('Paths index lists no days');
     return {
         start,
         bounds: [bounds[0], bounds[1], bounds[2], bounds[3]],
         coordinateSteps,
+        terminals,
         days: days.map(parseDayEntry)
     };
 }
@@ -72,7 +82,11 @@ export function parsePathDay(
     const u32 = Uint32Array.BYTES_PER_ELEMENT;
     const u16 = Uint16Array.BYTES_PER_ELEMENT;
     const expectedBytes =
-        (routes + 1) * u32 + 2 * journeys * u32 + journeys * u16 + 2 * points * u16;
+        (routes + 1) * u32 +
+        2 * journeys * u32 +
+        journeys * u16 +
+        2 * routes * u16 +
+        2 * points * u16;
     if (buffer.byteLength !== expectedBytes) {
         throw new Error(
             `Paths for ${entry.date} are ${buffer.byteLength} bytes, expected ${expectedBytes}`
@@ -91,6 +105,7 @@ export function parsePathDay(
     const journeyRoute = take((at) => new Uint32Array(buffer, at, journeys), journeys * u32);
     const journeyStart = take((at) => new Uint32Array(buffer, at, journeys), journeys * u32);
     const journeyDuration = take((at) => new Uint16Array(buffer, at, journeys), journeys * u16);
+    const routeStations = take((at) => new Uint16Array(buffer, at, 2 * routes), 2 * routes * u16);
     const steps = new Uint16Array(buffer, offset, 2 * points);
 
     return {
@@ -99,7 +114,8 @@ export function parsePathDay(
         positions: dequantise(index, steps),
         journeyRoute,
         journeyStart,
-        journeyDuration
+        journeyDuration,
+        routeStations
     };
 }
 

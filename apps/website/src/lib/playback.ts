@@ -23,6 +23,7 @@ export type PlaybackCommand = Partial<Pick<PlaybackState, 'playing' | 'positionM
 export const DEFAULT_SPEED = 24;
 // Speeds a viewer can pick, in simulated minutes per real second
 export const SPEED_PRESETS = [
+    { label: '¼ day/min', speed: 6 },
     { label: '½ day/min', speed: 12 },
     { label: '1 day/min', speed: 24 },
     { label: '2 days/min', speed: 48 },

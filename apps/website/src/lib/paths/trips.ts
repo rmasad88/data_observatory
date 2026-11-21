@@ -14,7 +14,7 @@ export const TRAIL_MINUTES = 3;
 export const TRAIL_COLOR: RGB = [255, 255, 255];
 // Faint on its own: trails add their light together (see TRAIL_BLENDING), so
 // a lone ride is a dim streak and a street carrying many at once glows white
-const TRAIL_OPACITY = 0.3;
+const TRAIL_OPACITY = 0.18;
 // Additive blending: each trail's colour is added to what is already drawn,
 // so overlapping trails build up brightness instead of hiding one another.
 // Depth is ignored, so trails at the same place all count.
@@ -40,6 +40,9 @@ export type Trip = {
     path: Float32Array;
     // When the ride passes each point, in minutes since the data's start
     timestamps: Float32Array;
+    // The start and end station, as positions in the paths' terminal list
+    from: number;
+    to: number;
 };
 
 export type DayTrips = {
@@ -71,10 +74,21 @@ export function buildDayTrips(day: PathDay): DayTrips {
                 day.routeOffsets[route] * 2,
                 day.routeOffsets[route + 1] * 2
             ),
-            timestamps
+            timestamps,
+            from: day.routeStations[route * 2],
+            to: day.routeStations[route * 2 + 1]
         };
     });
     return { date: day.date, trips };
+}
+
+// Only the trips that start or end at one of `stations` (positions in the
+// paths' terminal list)
+export function filterTrips(dayTrips: DayTrips, stations: ReadonlySet<number>): DayTrips {
+    return {
+        date: dayTrips.date,
+        trips: dayTrips.trips.filter((trip) => stations.has(trip.from) || stations.has(trip.to))
+    };
 }
 
 // Each point's share of the way along a route (longitude, latitude pairs),
