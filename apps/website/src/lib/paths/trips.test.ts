@@ -7,7 +7,8 @@ import {
     filterTrips,
     routeProgress,
     TRAIL_BLENDING,
-    TRAIL_MINUTES
+    TRAIL_MINUTES,
+    tripsDuring
 } from './trips';
 
 // Two routes: an L shape (east 2 units, then north 1) and a single step north.
@@ -88,13 +89,37 @@ describe('filterTrips', () => {
     });
 });
 
+describe('tripsDuring', () => {
+    // On the road 480-495, 510-516 and 540-570, each trailing for
+    // TRAIL_MINUTES after
+    const { trips } = buildDayTrips(makeDay());
+    const trailEnd = 495 + TRAIL_MINUTES;
+
+    it('keeps trips on the road or still trailing during the window', () => {
+        expect(tripsDuring(trips, trailEnd, 520)).toEqual([trips[0], trips[1]]);
+        // The first has finished trailing and the second not yet started
+        expect(tripsDuring(trips, trailEnd + 1, 510)).toEqual([]);
+        // A trip starting exactly at the window's end isn't in it
+        expect(tripsDuring(trips, 516, 540)).toEqual([trips[1]]);
+    });
+
+    it('compares in the time shown, after the shift', () => {
+        // Drawn a period later, so these rides show 20,160 minutes earlier
+        expect(tripsDuring(trips, trailEnd - 20_160, 520 - 20_160, 20_160)).toEqual([
+            trips[0],
+            trips[1]
+        ]);
+    });
+});
+
 describe('createTripsLayer', () => {
     it('shows the trails at the moment given, shifted by whole periods', () => {
         const dayTrips = buildDayTrips(makeDay());
 
-        const layer = createTripsLayer(dayTrips, 500, 20_160);
+        const layer = createTripsLayer('trips-a', dayTrips.trips, 500, 20_160, false);
 
-        expect(layer.id).toBe('trips-2024-07-01');
+        expect(layer.id).toBe('trips-a');
+        expect(layer.props.visible).toBe(false);
         expect(layer.props.currentTime).toBe(20_660);
         expect(layer.props.trailLength).toBe(TRAIL_MINUTES);
         // Overlapping trails add up, so busy streets stand out
