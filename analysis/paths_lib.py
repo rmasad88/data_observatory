@@ -1,8 +1,9 @@
 """Package estimated journey routes as compact per-day files for the browser.
 
-Each day's file holds the routes ridden on journeys starting that day and,
-for each journey, its route, start time and duration. ``paths.json`` lists
-the days and the layout. See the README's "Journey paths" section.
+Each day's file holds the routes ridden on journeys starting that day, the
+two stations each route joins and, for each journey, its route, start time
+and duration. ``paths.json`` lists the days, the stations and the layout.
+See the README's "Journey paths" section.
 """
 
 import json
@@ -33,6 +34,8 @@ class PathDay:
         The day, e.g. ``"2024-07-01"``.
     routes : list of list of (float, float)
         Each distinct route's (lon, lat) points, dock to dock.
+    route_pairs : list of (str, str)
+        The start and end terminal of each route.
     journey_route : numpy.ndarray
         Index into ``routes`` for each journey, sorted by start time.
     journey_start : numpy.ndarray
@@ -43,6 +46,7 @@ class PathDay:
 
     date: str
     routes: list
+    route_pairs: list
     journey_route: np.ndarray
     journey_start: np.ndarray
     journey_duration: np.ndarray
@@ -90,6 +94,7 @@ def build_path_days(
             PathDay(
                 date=str(date),
                 routes=[routes[pair] for pair in route_index],
+                route_pairs=list(route_index),
                 journey_route=group["pair"].map(route_index).to_numpy(),
                 journey_start=starts.round().astype(np.int64).to_numpy(),
                 journey_duration=(group["duration_ms"] / 1000)
@@ -129,9 +134,20 @@ def dequantise(steps: np.ndarray, bounds) -> np.ndarray:
     return fractions * [east - west, north - south] + [west, south]
 
 
-def encode_day(day: PathDay, bounds) -> bytes:
+def path_terminals(days: list[PathDay]) -> list[str]:
+    """Every terminal a route starts or ends at, sorted."""
+    pairs = [pair for day in days for pair in day.route_pairs]
+    return sorted({terminal for pair in pairs for terminal in pair})
+
+
+def encode_day(day: PathDay, bounds, terminals: list[str]) -> bytes:
     """One day's binary file: route offsets, journey routes, starts and
-    durations, then the points."""
+    durations, each route's two stations (positions in ``terminals``), then
+    the points."""
+    position = {terminal: i for i, terminal in enumerate(terminals)}
+    stations = np.array(
+        [[position[a], position[b]] for a, b in day.route_pairs]
+    ).reshape(-1)
     lengths = [len(route) for route in day.routes]
     offsets = np.concatenate([[0], np.cumsum(lengths)])
     points = np.array([point for route in day.routes for point in route])
@@ -141,6 +157,7 @@ def encode_day(day: PathDay, bounds) -> bytes:
         _checked(day.journey_route, U32, "journey routes"),
         _checked(day.journey_start, U32, "journey starts"),
         _checked(day.journey_duration, U16, "journey durations"),
+        _checked(stations, U16, "route stations"),
         quantise(points, bounds).reshape(-1),
     ]
     return b"".join(array.tobytes() for array in arrays)
@@ -167,11 +184,12 @@ def export_path_days(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     bounds = path_bounds(days)
+    terminals = path_terminals(days)
     written = []
     index_days = []
     for day in days:
         path = out_dir / f"{day.date}.bin"
-        path.write_bytes(encode_day(day, bounds))
+        path.write_bytes(encode_day(day, bounds, terminals))
         written.append(path)
         index_days.append(
             {
@@ -187,11 +205,14 @@ def export_path_days(
         "start": period_start.strftime("%Y-%m-%dT%H:%M:%S"),
         "bounds": list(bounds),
         "coordinateSteps": COORDINATE_STEPS,
+        # What routeStations' numbers refer to
+        "terminals": terminals,
         "layout": [
             "routeOffsets uint32 (routes + 1)",
             "journeyRoute uint32 (journeys)",
             "journeyStart uint32 seconds since start (journeys)",
             "journeyDuration uint16 seconds (journeys)",
+            "routeStations uint16 start, end terminal (routes x 2)",
             "points uint16 x, y pairs (points x 2)",
         ],
         "days": index_days,
