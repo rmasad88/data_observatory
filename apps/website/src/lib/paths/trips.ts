@@ -113,15 +113,35 @@ export function routeProgress(path: Float32Array): Float32Array {
     return progress;
 }
 
-// The trails of a day's journeys at a moment (minutes since the data's start).
-// `timeShift` moves the day by whole periods so the fortnight loops: the last
-// day's late rides show at the start of the next lap.
-export function createTripsLayer(dayTrips: DayTrips, minutes: number, timeShift = 0) {
+// The trips on the road at some point in a window of shown time (minutes since
+// the data's start, `from` included, `to` not), counting their fading trail.
+// `timeShift` is the one the trips will be drawn with.
+export function tripsDuring(trips: Trip[], from: number, to: number, timeShift = 0): Trip[] {
+    return trips.filter((trip) => {
+        const start = trip.timestamps[0] - timeShift;
+        const end = trip.timestamps[trip.timestamps.length - 1] - timeShift + TRAIL_MINUTES;
+        return start < to && end >= from;
+    });
+}
+
+// The trails of some trips at a moment (minutes since the data's start).
+// `timeShift` moves them by whole periods so the fortnight loops: the last
+// day's late rides show at the start of the next lap. `id` must be unique among the layers shown, and stay the same while `trips`
+// does. A hidden layer still uploads its trips, so it can be shown later
+// without a pause.
+export function createTripsLayer(
+    id: string,
+    trips: Trip[],
+    minutes: number,
+    timeShift = 0,
+    visible = true
+) {
     return new TripsLayer<Trip>({
-        id: `trips-${dayTrips.date}`,
+        id,
+        visible,
         // The same array every frame, so deck.gl uploads the trips once and
         // each frame only moves the time
-        data: dayTrips.trips,
+        data: trips,
         getPath: (trip) => trip.path as unknown as number[],
         positionFormat: 'XY',
         getTimestamps: (trip) => trip.timestamps as unknown as number[],

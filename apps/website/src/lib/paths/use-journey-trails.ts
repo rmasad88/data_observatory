@@ -1,14 +1,22 @@
 // React glue for the journey trails: loads the paths index once trails are
 // first switched on, keeps the days around the moment shown in a
-// PathDayCache, and gives back a trail layer per loaded day, limited to a
-// selection of stations if one is given.
+// PathDayCache, and gives back trail layers for the rides on the road now,
+// limited to a selection of stations if one is given.
+//
+// Only the current hour's rides are handed to the GPU, a few thousand at
+// most: a whole day of trails is hundreds of megabytes of buffers, more than
+// some graphics cards will take, and then nothing is drawn. The next hour is
+// prepared hidden, so moving on to it doesn't stutter.
 
 import { useEffect, useMemo, useState } from 'react';
 
 import { NO_SELECTION, selectionInPaths, type Selection } from '../station-selection';
 import { loadPathDay, loadPathsIndex, type PathsIndex } from './data';
 import { MINUTES_PER_DAY, PathDayCache, wantedDays } from './day-cache';
-import { buildDayTrips, createTripsLayer, filterTrips } from './trips';
+import { buildDayTrips, createTripsLayer, filterTrips, tripsDuring, type Trip } from './trips';
+
+// The trails are handed to the GPU an hour of shown time at a time
+const BATCH_MINUTES = 60;
 
 export type TrailFilter = {
     // Stations (positions in the heartbeat's list) whose journeys to show;
@@ -95,8 +103,32 @@ export function useJourneyTrails(
         // `version` stands for the cache's contents changing
     }, [enabled, cache, index, wanted, filter, version]);
 
+    // Each batch's trips, kept while `shown` stays the same, so the batch
+    // prepared hidden keeps its array (and its upload) once it's shown
+    const batchCache = useMemo(() => new Map<string, Trip[]>(), [shown]);
+    const hour = Math.floor(minutes / BATCH_MINUTES);
+    const batches = useMemo(() => {
+        const list = [0, 1].flatMap((ahead) => {
+            const from = (hour + ahead) * BATCH_MINUTES;
+            return shown.map(({ trips, timeShift }) => {
+                const id = `trips-${trips.date}-${timeShift}-${from}`;
+                const during =
+                    batchCache.get(id) ??
+                    tripsDuring(trips.trips, from, from + BATCH_MINUTES, timeShift);
+                return { id, trips: during, timeShift, visible: ahead === 0 };
+            });
+        });
+        // Forget batches that have gone by
+        batchCache.clear();
+        for (const batch of list) batchCache.set(batch.id, batch.trips);
+        return list;
+    }, [shown, batchCache, hour]);
+
     return useMemo(
-        () => shown.map(({ trips, timeShift }) => createTripsLayer(trips, minutes, timeShift)),
-        [shown, minutes]
+        () =>
+            batches.map(({ id, trips, timeShift, visible }) =>
+                createTripsLayer(id, trips, minutes, timeShift, visible)
+            ),
+        [batches, minutes]
     );
 }
