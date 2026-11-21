@@ -1,4 +1,4 @@
-import { ArrowsInIcon, PauseIcon, PlayIcon } from '@phosphor-icons/react';
+import { ArrowsInIcon, PathIcon, PauseIcon, PlayIcon, PlusMinusIcon } from '@phosphor-icons/react';
 
 import type { DayTick } from '../lib/explore';
 import { SPEED_PRESETS } from '../lib/playback';
@@ -16,10 +16,18 @@ type Props = {
     onSeek: (minutes: number) => void;
     onSpeed: (speed: number) => void;
     onResetView: () => void;
+    // Whether the journey trails and the + and − symbols are drawn
+    showJourneys: boolean;
+    showSymbols: boolean;
+    onToggleJourneys: () => void;
+    onToggleSymbols: () => void;
 };
 
 const BUTTON_CLASS =
     'flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-zinc-800 text-zinc-100 hover:bg-zinc-700';
+// A switched-off layer toggle: dimmer, with no fill
+const TOGGLE_OFF_CLASS =
+    'flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-zinc-700 text-zinc-500 hover:text-zinc-300';
 // The slider moves in 10-minute steps, one data bin
 const SEEK_STEP_MINUTES = 10;
 
@@ -84,6 +92,21 @@ export function ExploreControls(props: Props) {
                 ))}
             </select>
 
+            <LayerToggle
+                label="Journeys"
+                pressed={props.showJourneys}
+                onToggle={props.onToggleJourneys}
+            >
+                <PathIcon size={18} />
+            </LayerToggle>
+            <LayerToggle
+                label="+/− symbols"
+                pressed={props.showSymbols}
+                onToggle={props.onToggleSymbols}
+            >
+                <PlusMinusIcon size={18} />
+            </LayerToggle>
+
             <button
                 type="button"
                 className={BUTTON_CLASS}
@@ -94,5 +117,28 @@ export function ExploreControls(props: Props) {
                 <ArrowsInIcon size={18} />
             </button>
         </div>
+    );
+}
+
+type LayerToggleProps = {
+    label: string;
+    pressed: boolean;
+    onToggle: () => void;
+    children: React.ReactNode;
+};
+
+// An on/off button for one of the map's optional layers
+function LayerToggle({ label, pressed, onToggle, children }: LayerToggleProps) {
+    return (
+        <button
+            type="button"
+            className={pressed ? BUTTON_CLASS : TOGGLE_OFF_CLASS}
+            onClick={onToggle}
+            aria-label={label}
+            aria-pressed={pressed}
+            title={`${label}: ${pressed ? 'on' : 'off'}`}
+        >
+            {children}
+        </button>
     );
 }

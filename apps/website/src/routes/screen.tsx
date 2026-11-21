@@ -14,6 +14,7 @@ import {
     stationPoints,
     stationStyles
 } from '../lib/heartbeat/layer';
+import { useJourneyTrails } from '../lib/paths/use-journey-trails';
 import {
     DEFAULT_SPEED,
     INITIAL_POSITION_MINUTES,
@@ -205,7 +206,6 @@ function ScreenPage() {
 
     const clock = heartbeat ? wallClock(heartbeat.start, minutes) : undefined;
 
-    // Only the deck.gl renderer draws these layers, so the fallback skips them
     // When each station releases its + and − symbols, worked out once. Only
     // the deck.gl renderer draws them, so the simulator's iframes skip this.
     const flowSchedule = useMemo(
@@ -213,16 +213,20 @@ function ScreenPage() {
         [heartbeat, useDeckWrapper]
     );
     const speed = playback?.speed ?? DEFAULT_SPEED;
+    // The wall always shows the trails, on the deck.gl renderer only
+    const trailLayers = useJourneyTrails(useDeckWrapper, heartbeat?.start, minutes);
     const layers = useMemo(
         () =>
             heartbeat && flowSchedule
                 ? [
+                      // Under the dots, so the stations stay readable
+                      ...trailLayers,
                       createStationLayer(heartbeat, binPosition),
                       // Above the dots
                       createFlowSymbolLayer(heartbeat, flowSchedule, minutes, speed)
                   ]
                 : [],
-        [heartbeat, flowSchedule, binPosition, minutes, speed]
+        [heartbeat, flowSchedule, trailLayers, binPosition, minutes, speed]
     );
 
     // Fallback: add the stations' points and circle layer to the map once

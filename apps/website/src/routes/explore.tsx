@@ -17,6 +17,7 @@ import {
 import { loadHeartbeat, type HeartbeatData } from '../lib/heartbeat/data';
 import { buildFlowSchedule, createFlowSymbolLayer } from '../lib/heartbeat/flow-symbols';
 import { activityAtPosition, binPositionAt, createStationLayer } from '../lib/heartbeat/layer';
+import { useJourneyTrails } from '../lib/paths/use-journey-trails';
 import {
     applyPlaybackCommand,
     DEFAULT_SPEED,
@@ -56,6 +57,9 @@ function ExplorePage() {
     const [minutes, setMinutes] = useState(EXPLORE_START_MINUTES);
     // The camera; null until the data is loaded and the stations can be framed
     const [viewState, setViewState] = useState<MapViewState | null>(null);
+    // The two optional layers, both on to begin with
+    const [showJourneys, setShowJourneys] = useState(true);
+    const [showSymbols, setShowSymbols] = useState(true);
 
     const command = useCallback((change: PlaybackCommand) => {
         setPlayback((prev) => applyPlaybackCommand(prev, change, performance.now()));
@@ -133,16 +137,28 @@ function ExplorePage() {
         () => (heartbeat ? buildFlowSchedule(heartbeat) : null),
         [heartbeat]
     );
+    const trailLayers = useJourneyTrails(showJourneys, heartbeat?.start, minutes);
     const layers = useMemo(
         () =>
             heartbeat && flowSchedule
                 ? [
+                      // Under the dots, so the stations stay readable
+                      ...trailLayers,
                       createStationLayer(heartbeat, binPosition),
                       // Above the dots
-                      createFlowSymbolLayer(heartbeat, flowSchedule, minutes, playback.speed)
+                      ...(showSymbols
+                          ? [
+                                createFlowSymbolLayer(
+                                    heartbeat,
+                                    flowSchedule,
+                                    minutes,
+                                    playback.speed
+                                )
+                            ]
+                          : [])
                   ]
                 : [],
-        [heartbeat, flowSchedule, binPosition, minutes, playback.speed]
+        [heartbeat, flowSchedule, trailLayers, binPosition, showSymbols, minutes, playback.speed]
     );
     const ticks = useMemo(() => (heartbeat ? dayTicks(heartbeat) : []), [heartbeat]);
 
@@ -192,6 +208,10 @@ function ExplorePage() {
                     onSeek={(positionMinutes) => command({ positionMinutes })}
                     onSpeed={(speed) => command({ speed })}
                     onResetView={resetView}
+                    showJourneys={showJourneys}
+                    showSymbols={showSymbols}
+                    onToggleJourneys={() => setShowJourneys((shown) => !shown)}
+                    onToggleSymbols={() => setShowSymbols((shown) => !shown)}
                 />
             ) : null}
         </main>
