@@ -83,9 +83,9 @@ export function activitiesAtPosition(
 
 // The bins near a position (wrapped to the period) and their Gaussian weights,
 // scaled to add up to 1
-type SmoothingWeights = { bins: number[]; weights: number[] };
+export type SmoothingWeights = { bins: number[]; weights: number[] };
 
-function smoothingWeights(
+export function smoothingWeights(
     data: HeartbeatData,
     binPosition: number,
     sigmaMinutes: number

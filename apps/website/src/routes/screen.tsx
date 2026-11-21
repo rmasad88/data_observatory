@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { WallLabels } from '../components/wall-labels';
 import { MAP_STYLE } from '../lib/basemap';
+import { buildFlowSchedule, createFlowSymbolLayer } from '../lib/heartbeat/flow-symbols';
 import {
     binPositionAt,
     createStationLayer,
@@ -13,7 +14,12 @@ import {
     stationPoints,
     stationStyles
 } from '../lib/heartbeat/layer';
-import { INITIAL_POSITION_MINUTES, playbackMinutes, wrapMinutes } from '../lib/playback';
+import {
+    DEFAULT_SPEED,
+    INITIAL_POSITION_MINUTES,
+    playbackMinutes,
+    wrapMinutes
+} from '../lib/playback';
 import { screenEngine } from '../lib/realtime/engines/screen-engine';
 import { useScreenStore } from '../lib/realtime/stores/screen-store';
 import { DEFAULT_MAP_VIEW, type ScreenMapViewState } from '../lib/realtime/types';
@@ -200,9 +206,23 @@ function ScreenPage() {
     const clock = heartbeat ? wallClock(heartbeat.start, minutes) : undefined;
 
     // Only the deck.gl renderer draws these layers, so the fallback skips them
+    // When each station releases its + and − symbols, worked out once. Only
+    // the deck.gl renderer draws them, so the simulator's iframes skip this.
+    const flowSchedule = useMemo(
+        () => (heartbeat && useDeckWrapper ? buildFlowSchedule(heartbeat) : null),
+        [heartbeat, useDeckWrapper]
+    );
+    const speed = playback?.speed ?? DEFAULT_SPEED;
     const layers = useMemo(
-        () => (heartbeat && useDeckWrapper ? [createStationLayer(heartbeat, binPosition)] : []),
-        [heartbeat, binPosition, useDeckWrapper]
+        () =>
+            heartbeat && flowSchedule
+                ? [
+                      createStationLayer(heartbeat, binPosition),
+                      // Above the dots
+                      createFlowSymbolLayer(heartbeat, flowSchedule, minutes, speed)
+                  ]
+                : [],
+        [heartbeat, flowSchedule, binPosition, minutes, speed]
     );
 
     // Fallback: add the stations' points and circle layer to the map once

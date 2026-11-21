@@ -15,6 +15,7 @@ import {
     stepHours
 } from '../lib/explore';
 import { loadHeartbeat, type HeartbeatData } from '../lib/heartbeat/data';
+import { buildFlowSchedule, createFlowSymbolLayer } from '../lib/heartbeat/flow-symbols';
 import { activityAtPosition, binPositionAt, createStationLayer } from '../lib/heartbeat/layer';
 import {
     applyPlaybackCommand,
@@ -127,9 +128,21 @@ function ExplorePage() {
     }, [heartbeat, playback, command]);
 
     const binPosition = heartbeat ? binPositionAt(heartbeat, minutes) : 0;
+    // When each station releases its + and − symbols, worked out once
+    const flowSchedule = useMemo(
+        () => (heartbeat ? buildFlowSchedule(heartbeat) : null),
+        [heartbeat]
+    );
     const layers = useMemo(
-        () => (heartbeat ? [createStationLayer(heartbeat, binPosition)] : []),
-        [heartbeat, binPosition]
+        () =>
+            heartbeat && flowSchedule
+                ? [
+                      createStationLayer(heartbeat, binPosition),
+                      // Above the dots
+                      createFlowSymbolLayer(heartbeat, flowSchedule, minutes, playback.speed)
+                  ]
+                : [],
+        [heartbeat, flowSchedule, binPosition, minutes, playback.speed]
     );
     const ticks = useMemo(() => (heartbeat ? dayTicks(heartbeat) : []), [heartbeat]);
 
