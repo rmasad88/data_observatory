@@ -39,6 +39,8 @@ TfL Santander Cycles journeys for 1–14 July 2024.
 loading_lib    download and read journeys and docking stations
 cleaning_lib   fix and filter journeys
 heartbeat_lib  count departures and arrivals per station per 10 minutes
+routing_lib    estimate each ride's route on OpenStreetMap's cycle network
+paths_lib      package the routes and journeys as per-day files
 ```
 
 `analysis/analysis.ipynb` explores the data and explains each decision. Tests
@@ -50,6 +52,7 @@ for each library are in `analysis/tests/`.
 conda env create -f analysis/environment.yml   # once
 conda activate d4h
 python analysis/build_heartbeat.py             # regenerate the data
+python analysis/build_paths.py                 # regenerate the journey paths
 cd analysis && pytest                          # run the tests
 ```
 
@@ -77,6 +80,32 @@ changing the pipeline.
 - **Journeys:** relocated stations are mapped to their current terminal
   number; TfL workshop moves, same-station hires under 1 minute (false starts)
   and hires over 2 hours are dropped. 98.6% of journeys are kept.
+
+### Journey paths
+
+TfL's data records where and when each hire started and ended, not the route,
+so routes are **estimated**. `build_paths.py` downloads OpenStreetMap's
+cycleable streets (cached in `analysis/data/osm/`) and gives each ride the
+cheapest path between its two docks, where a street costs its length times a
+multiplier:
+
+| Street                                           | Multiplier            |
+| ------------------------------------------------ | --------------------- |
+| Cycleway, cycle track or `bicycle=designated`    | 0.8                   |
+| Residential and other quiet streets              | 1.0                   |
+| Tertiary / secondary / primary / trunk road      | 1.2 / 1.4 / 1.6 / 2.0 |
+| Busy road with a painted lane or shared bus lane | halfway back to 1     |
+| Pedestrian areas and `bicycle=dismount`          | 2.0                   |
+
+The multipliers are assumptions, not measurements. As a check, the routes
+imply a median riding speed of 14 km/h, with 87% of journeys between 8 and
+25 km/h. Routes are simplified to within 10 m of the streets. Each ride keeps
+its real start time and duration.
+
+The output is one file per day in `apps/website/public/data/paths/`, listed by
+`paths.json`, which also gives the layout: route point offsets, each journey's
+route, start (seconds since 1 July 00:00) and duration, then the route points
+as 16-bit steps across the bounding box in `bounds`.
 
 ## Runtime Context Note (Top-Level vs Iframe)
 

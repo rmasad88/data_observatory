@@ -1,0 +1,117 @@
+{
+ "start": "2024-07-01T00:00:00",
+ "bounds": [
+  -0.24026580000000003,
+  51.4504579,
+  0.0087742,
+  51.550772599999995
+ ],
+ "coordinateSteps": 65535,
+ "layout": [
+  "routeOffsets uint32 (routes + 1)",
+  "journeyRoute uint32 (journeys)",
+  "journeyStart uint32 seconds since start (journeys)",
+  "journeyDuration uint16 seconds (journeys)",
+  "points uint16 x, y pairs (points x 2)"
+ ],
+ "days": [
+  {
+   "date": "2024-07-01",
+   "file": "2024-07-01.bin",
+   "routes": 22072,
+   "points": 570334,
+   "journeys": 27122
+  },
+  {
+   "date": "2024-07-02",
+   "file": "2024-07-02.bin",
+   "routes": 23868,
+   "points": 624826,
+   "journeys": 28830
+  },
+  {
+   "date": "2024-07-03",
+   "file": "2024-07-03.bin",
+   "routes": 23043,
+   "points": 592624,
+   "journeys": 27983
+  },
+  {
+   "date": "2024-07-04",
+   "file": "2024-07-04.bin",
+   "routes": 25677,
+   "points": 667979,
+   "journeys": 31583
+  },
+  {
+   "date": "2024-07-05",
+   "file": "2024-07-05.bin",
+   "routes": 13100,
+   "points": 305719,
+   "journeys": 15496
+  },
+  {
+   "date": "2024-07-06",
+   "file": "2024-07-06.bin",
+   "routes": 11887,
+   "points": 276984,
+   "journeys": 15353
+  },
+  {
+   "date": "2024-07-07",
+   "file": "2024-07-07.bin",
+   "routes": 12889,
+   "points": 307428,
+   "journeys": 17010
+  },
+  {
+   "date": "2024-07-08",
+   "file": "2024-07-08.bin",
+   "routes": 20128,
+   "points": 515559,
+   "journeys": 24211
+  },
+  {
+   "date": "2024-07-09",
+   "file": "2024-07-09.bin",
+   "routes": 19159,
+   "points": 499516,
+   "journeys": 22389
+  },
+  {
+   "date": "2024-07-10",
+   "file": "2024-07-10.bin",
+   "routes": 24676,
+   "points": 647874,
+   "journeys": 30414
+  },
+  {
+   "date": "2024-07-11",
+   "file": "2024-07-11.bin",
+   "routes": 24481,
+   "points": 642590,
+   "journeys": 30133
+  },
+  {
+   "date": "2024-07-12",
+   "file": "2024-07-12.bin",
+   "routes": 20790,
+   "points": 520854,
+   "journeys": 25920
+  },
+  {
+   "date": "2024-07-13",
+   "file": "2024-07-13.bin",
+   "routes": 17432,
+   "points": 430689,
+   "journeys": 24649
+  },
+  {
+   "date": "2024-07-14",
+   "file": "2024-07-14.bin",
+   "routes": 18154,
+   "points": 458613,
+   "journeys": 25246
+  }
+ ]
+}
