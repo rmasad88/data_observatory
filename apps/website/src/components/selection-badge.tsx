@@ -14,7 +14,7 @@ export function SelectionBadge({ label, onClear }: Props) {
     if (!label) {
         return (
             // A hint only on screens with room for it and, usually, a keyboard
-            <p className="pointer-events-none absolute top-5 right-5 hidden rounded-lg bg-zinc-950/70 px-3 py-2 text-xs text-zinc-400 backdrop-blur lg:block">
+            <p className="pointer-events-none absolute top-5 right-5 hidden rounded-xl bg-zinc-950/85 px-4 py-3 text-sm text-zinc-200 shadow-xl backdrop-blur lg:block">
                 Click a station, or Shift-drag a box, to see only its journeys
             </p>
         );

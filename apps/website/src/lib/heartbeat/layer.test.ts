@@ -130,7 +130,7 @@ describe('createStationLayer', () => {
 
 describe('dimmed', () => {
     it('keeps the colour and lowers the opacity', () => {
-        expect(dimmed([200, 100, 50, 250])).toEqual([200, 100, 50, 50]);
+        expect(dimmed([200, 100, 50, 250])).toEqual([200, 100, 50, 88]);
     });
 });
 
